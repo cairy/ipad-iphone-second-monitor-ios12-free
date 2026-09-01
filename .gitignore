@@ -13,3 +13,12 @@ xcuserdata/
 .env
 
 .claude/
+
+# Python cache
+__pycache__/
+
+# Local agent/workspace memory (may contain device UDIDs etc.)
+.workbuddy/
+
+# Xcode user data dirs
+*.xcuserdatad

@@ -58,8 +58,12 @@ ipad12-second-screen/
       AppDelegate.swift
       ReceiverViewController.swift  <- fullscreen video view + touch/scroll capture + cursor sprite
       VideoReceiver.swift    <- core: TCP listener, frame deframing, H.264 decode, control message send/recv
+      SocksProxy.swift       <- starts the in-app SOCKS5 server (microsocks) and keeps it alive
+      SocksEngine/           <- vendored microsocks (BSD, see COPYING) + SocksBridge.c/h (C bridge)
       LaunchScreen.storyboard
       Assets.xcassets/
+  tools/
+    mac_socks_bridge.py    <- Mac-side bridge: localhost:port -> USB (usbmuxd) -> iPad:9001, no deps
   Mac/                    <- git submodule, upstream OpenDisplay, UNMODIFIED, GPL-3.0
 ```
 
@@ -91,7 +95,7 @@ useful second display in practice than an iPad.
 ## Step 0 — Clone with submodules
 
 ```bash
-git clone --recurse-submodules https://github.com/cuongpham1/ipad-iphone-second-monitor-ios12-free.git
+git clone --recurse-submodules https://github.com/cairy/ipad-iphone-second-monitor-ios12-free.git
 cd ipad-iphone-second-monitor-ios12-free
 ```
 
@@ -188,6 +192,45 @@ membership ($99/year) — signs for a full year.
    the macOS desktop (with a real mouse cursor), and a new display should
    appear under System Settings → Displays on the Mac — drag a window over
    to it and you're set.
+
+## Optional — Route Mac traffic through the iPad over USB (SOCKS5 proxy)
+
+The iPad app also runs a small SOCKS5 server (microsocks, vendored in
+`iOS/App/SocksEngine/`, started automatically on `127.0.0.1:9001` when the
+app launches). Combined with the Mac-side bridge below, you can tunnel any
+Mac traffic through the iPad's internet connection **over the USB cable** —
+no Wi-Fi needed for the tunnel itself.
+
+Use cases: give the Mac an egress path via the iPad's LTE when the Mac is on
+a locked-down / 802.1X Wi-Fi network, or run a fully cable-only setup. This
+is independent of the display feature and never touches it.
+
+### Run it
+
+```bash
+python3 tools/mac_socks_bridge.py --local 1080 --device 9001
+```
+
+- `--local 1080` — port the bridge listens on, on your Mac (`127.0.0.1:1080`).
+- `--device 9001` — port the SOCKS5 server listens on, inside the iPad app
+  (reached through `usbmuxd` over USB).
+- `--udid <id>` pins a specific device, `--list` prints connected devices,
+  `--wait` keeps retrying until a device appears.
+
+Then point any app (or the macOS system proxy in System Settings → Network →
+your interface → Details → Proxies) at `127.0.0.1:1080`. DNS is resolved on
+the iPad side, so the Mac's own DNS config is never exposed through the
+tunnel.
+
+### How it works
+
+`mac_socks_bridge.py` is pure Python stdlib (no `pip install`). It opens a
+local listener, and for each SOCKS5 connection it tunnels the bytes to the
+iPad over `usbmuxd` (the same USB multiplexer the display uses), where
+microsocks fulfills the request and sends the reply back the same way. The
+iPad app keeps the SOCKS5 server alive across foreground/background
+transitions using its own lifecycle, so the display's listener rebuild never
+kills it.
 
 ## If it won't connect — check these first
 
