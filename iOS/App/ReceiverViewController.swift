@@ -16,6 +16,7 @@ final class ReceiverViewController: UIViewController, VideoReceiverDelegate {
     private let videoView = VideoContainerView()
     private let statusLabel = UILabel()
     private var receiver: VideoReceiver!
+    private let socks = SocksProxy(devicePort: 9001)
     private var lastVideoSize: CGSize = .zero
 
     // Cursor sprite: positioned/sized in normalized [0,1] Mac-display space,
@@ -57,6 +58,12 @@ final class ReceiverViewController: UIViewController, VideoReceiverDelegate {
         receiver = VideoReceiver(displayLayer: videoView.displayLayer)
         receiver.delegate = self
 
+        // Bring up the embedded SOCKS5 proxy (microsocks) so the Mac can tunnel
+        // traffic through this iPad over USB. Independent of the video listener
+        // -- it owns its own thread and is never torn down by the foreground
+        // reconnect logic below.
+        socks.start()
+
         UIApplication.shared.isIdleTimerDisabled = true
 
         // Two-finger pan = scroll (like a trackpad).
@@ -74,6 +81,7 @@ final class ReceiverViewController: UIViewController, VideoReceiverDelegate {
     // the last decoded frame. Force a clean reconnect on every return.
     @objc private func appWillEnterForeground() {
         receiver.ensureListening()
+        socks.ensureListening()
     }
 
     override func viewDidLayoutSubviews() {
