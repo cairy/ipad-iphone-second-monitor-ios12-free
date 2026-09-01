@@ -2,6 +2,52 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <netinet/tcp.h>
+#include <sys/time.h>
+
+/* Per-socket send/receive buffer we ask the kernel for.
+   The path is browser -> Mac bridge -> usbmuxd -> USB -> microsocks -> target,
+   i.e. every byte crosses a USB tunnel whose round-trip is far worse than
+   plain loopback. Buffer * bandwidth-delay-product: at ~30 MB/s and a few ms
+   of tunnelling latency the pipe needs roughly 100 KB in flight before it
+   stops going idle. The kernel clamps this to its own maximum, so asking for
+   a generous value is safe — a too-small buffer is not. */
+#ifndef SOCKS_SOCK_BUFSIZE
+#define SOCKS_SOCK_BUFSIZE (128 * 1024)
+#endif
+
+void tune_socket(int fd) {
+	int yes = 1;
+	/* The single biggest latency win on this codebase. Nagle buffers small
+	   writes until the previous ACK arrives; the peer's delayed-ACK timer
+	   then waits its own ~40 ms before sending one. Chained over a USB
+	   tunnel that combination routinely adds 40-200 ms to every request
+	   that doesn't fill a full segment — HTTP headers, TLS handshakes,
+	   keep-alive pings. Every socket in the chain needs this. */
+	setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &yes, sizeof yes);
+
+	int bufsize = SOCKS_SOCK_BUFSIZE;
+	setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &bufsize, sizeof bufsize);
+	setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &bufsize, sizeof bufsize);
+}
+
+void set_socket_timeout(int fd, int seconds) {
+	struct timeval tv;
+	tv.tv_sec = seconds;
+	tv.tv_usec = 0;
+	/* Only meaningful while the socket is still blocking. copyloop() flips
+	   both ends to non-blocking and then relies on poll() for its timing,
+	   so this guards the handshake phase only. */
+	setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
+	setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv);
+}
+
+void set_socket_nonblocking(int fd) {
+	int fl = fcntl(fd, F_GETFL, 0);
+	if(fl != -1) fcntl(fd, F_SETFL, fl | O_NONBLOCK);
+}
 
 int resolve(const char *host, unsigned short port, struct addrinfo** addr) {
 	struct addrinfo hints = {

@@ -59,7 +59,7 @@ ipad12-second-screen/
       ReceiverViewController.swift  <- fullscreen video view + touch/scroll capture + cursor sprite
       VideoReceiver.swift    <- core: TCP listener, frame deframing, H.264 decode, control message send/recv
       SocksProxy.swift       <- starts the in-app SOCKS5 server (microsocks) and keeps it alive
-      SocksEngine/           <- vendored microsocks (BSD, see COPYING) + SocksBridge.c/h (C bridge)
+      SocksEngine/           <- vendored microsocks (MIT, see COPYING) + SocksBridge.c/h (C bridge)
       LaunchScreen.storyboard
       Assets.xcassets/
   tools/

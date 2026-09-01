@@ -42,6 +42,12 @@ int resolve(const char *host, unsigned short port, struct addrinfo** addr);
 int resolve_sa(const char *host, unsigned short port, union sockaddr_union *res);
 int bindtoip(int fd, union sockaddr_union *bindaddr);
 
+/* Socket tuning helpers added for the USB-tunnel build (LegacyPadDisplay).
+   See server.c for why each of these matters on the usbmuxd path. */
+void tune_socket(int fd);
+void set_socket_timeout(int fd, int seconds);
+void set_socket_nonblocking(int fd);
+
 int server_waitclient(struct server *server, struct client* client);
 int server_setup(struct server *server, const char* listenip, unsigned short port);
 
