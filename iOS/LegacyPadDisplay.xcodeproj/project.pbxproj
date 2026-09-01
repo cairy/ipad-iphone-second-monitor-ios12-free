@@ -7,20 +7,36 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		19028690349B2A54AE77E7F8 /* server.c in Sources */ = {isa = PBXBuildFile; fileRef = 96C00C2D32D2EE43D4C0A3AF /* server.c */; };
 		19463B5CEDC2A732CD5545EE /* VideoReceiver.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8BD162F6949C37A494E0A4B /* VideoReceiver.swift */; };
+		38D2EE6E0B65B1791E49B086 /* SocksBridge.c in Sources */ = {isa = PBXBuildFile; fileRef = 2935C4449FBA2475F0428AA5 /* SocksBridge.c */; };
+		3D4D0EA3AEDF36FAB632E7EC /* sblist_delete.c in Sources */ = {isa = PBXBuildFile; fileRef = 738C200CF4B8D44ECEAEDD03 /* sblist_delete.c */; };
 		52AE181B83A9015E4BD157B9 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = D31D10293304F90494CF1032 /* LaunchScreen.storyboard */; };
+		716DC84F7F03FF998CCFCF2D /* SocksProxy.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9287C3C53DAC1873A60FE82 /* SocksProxy.swift */; };
 		979B14DB6CEC6E9908FE0506 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 067A36546AA0E8BB98C66B3F /* Assets.xcassets */; };
 		C0B12A851481B8A306F963F0 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B315F6329884FBDABCF68CDB /* AppDelegate.swift */; };
+		DBF57E42AEDBC23498402F88 /* sblist.c in Sources */ = {isa = PBXBuildFile; fileRef = 1C30275D475DE38C1568B7F1 /* sblist.c */; };
 		F163F22AD06ECA70EC848C29 /* ReceiverViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD4E67EEBAADB7ABD549A827 /* ReceiverViewController.swift */; };
+		F268B6E8B13C77C4CF9011B7 /* sockssrv.c in Sources */ = {isa = PBXBuildFile; fileRef = F82768C8EF42A3976D81A85D /* sockssrv.c */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		067A36546AA0E8BB98C66B3F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		1C30275D475DE38C1568B7F1 /* sblist.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = sblist.c; sourceTree = "<group>"; };
+		2935C4449FBA2475F0428AA5 /* SocksBridge.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = SocksBridge.c; sourceTree = "<group>"; };
+		33115210ECB93554889C29F1 /* sblist.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = sblist.h; sourceTree = "<group>"; };
+		387A1045F141C3F9D6D632AE /* BridgingHeader.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BridgingHeader.h; sourceTree = "<group>"; };
+		3D37B736AAC50588216E5F6D /* server.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = server.h; sourceTree = "<group>"; };
+		5ED145AE1C996C32ABDD8843 /* SocksBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SocksBridge.h; sourceTree = "<group>"; };
+		738C200CF4B8D44ECEAEDD03 /* sblist_delete.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = sblist_delete.c; sourceTree = "<group>"; };
+		96C00C2D32D2EE43D4C0A3AF /* server.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = server.c; sourceTree = "<group>"; };
 		A28BE9AC4C2D52E4949FD21E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		B315F6329884FBDABCF68CDB /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		BD4E67EEBAADB7ABD549A827 /* ReceiverViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiverViewController.swift; sourceTree = "<group>"; };
 		D31D10293304F90494CF1032 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
-		F6B16C3723092E738647E61B /* LegacyPadDisplay.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = LegacyPadDisplay.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E9287C3C53DAC1873A60FE82 /* SocksProxy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocksProxy.swift; sourceTree = "<group>"; };
+		F6B16C3723092E738647E61B /* LegacyPadDisplay.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LegacyPadDisplay.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F82768C8EF42A3976D81A85D /* sockssrv.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = sockssrv.c; sourceTree = "<group>"; };
 		F8BD162F6949C37A494E0A4B /* VideoReceiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoReceiver.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -41,9 +57,27 @@
 				A28BE9AC4C2D52E4949FD21E /* Info.plist */,
 				D31D10293304F90494CF1032 /* LaunchScreen.storyboard */,
 				BD4E67EEBAADB7ABD549A827 /* ReceiverViewController.swift */,
+				E9287C3C53DAC1873A60FE82 /* SocksProxy.swift */,
 				F8BD162F6949C37A494E0A4B /* VideoReceiver.swift */,
+				BE7CD99BEC75C5C79316ED40 /* SocksEngine */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		BE7CD99BEC75C5C79316ED40 /* SocksEngine */ = {
+			isa = PBXGroup;
+			children = (
+				387A1045F141C3F9D6D632AE /* BridgingHeader.h */,
+				738C200CF4B8D44ECEAEDD03 /* sblist_delete.c */,
+				1C30275D475DE38C1568B7F1 /* sblist.c */,
+				33115210ECB93554889C29F1 /* sblist.h */,
+				96C00C2D32D2EE43D4C0A3AF /* server.c */,
+				3D37B736AAC50588216E5F6D /* server.h */,
+				2935C4449FBA2475F0428AA5 /* SocksBridge.c */,
+				5ED145AE1C996C32ABDD8843 /* SocksBridge.h */,
+				F82768C8EF42A3976D81A85D /* sockssrv.c */,
+			);
+			path = SocksEngine;
 			sourceTree = "<group>";
 		};
 		D57B6FCEAA03D50A2FDD4AE8 /* Products */ = {
@@ -85,7 +119,6 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					3CEA33F796D2DEEC37E7AED7 = {
-						DevelopmentTeam = "${DEVELOPMENT_TEAM}";
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -128,7 +161,13 @@
 			files = (
 				C0B12A851481B8A306F963F0 /* AppDelegate.swift in Sources */,
 				F163F22AD06ECA70EC848C29 /* ReceiverViewController.swift in Sources */,
+				38D2EE6E0B65B1791E49B086 /* SocksBridge.c in Sources */,
+				716DC84F7F03FF998CCFCF2D /* SocksProxy.swift in Sources */,
 				19463B5CEDC2A732CD5545EE /* VideoReceiver.swift in Sources */,
+				DBF57E42AEDBC23498402F88 /* sblist.c in Sources */,
+				3D4D0EA3AEDF36FAB632E7EC /* sblist_delete.c in Sources */,
+				19028690349B2A54AE77E7F8 /* server.c in Sources */,
+				F268B6E8B13C77C4CF9011B7 /* sockssrv.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -140,6 +179,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = "${DEVELOPMENT_TEAM}";
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 12.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -148,6 +188,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.legacypaddisplay;
 				SDKROOT = iphoneos;
+				SWIFT_OBJC_BRIDGING_HEADER = App/SocksEngine/BridgingHeader.h;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
@@ -216,6 +257,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = "${DEVELOPMENT_TEAM}";
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 12.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -224,6 +266,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.legacypaddisplay;
 				SDKROOT = iphoneos;
+				SWIFT_OBJC_BRIDGING_HEADER = App/SocksEngine/BridgingHeader.h;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;

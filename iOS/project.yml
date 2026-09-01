@@ -18,7 +18,11 @@ targets:
     # iPad stuck on iOS 12 is the whole point of this project.
     deploymentTarget: "12.0"
     sources:
-      - App
+      - path: App
+        # Keep the vendored microsocks license file out of the build (it has
+        # no file extension and Xcode wouldn't know how to process it).
+        excludes:
+          - "**/COPYING"
     info:
       path: App/Info.plist
       properties:
@@ -41,3 +45,6 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         IPHONEOS_DEPLOYMENT_TARGET: "12.0"
+        # Exposes the embedded microsocks C API (App/SocksEngine/SocksBridge.h)
+        # to Swift. Path is relative to SOURCE_ROOT (the iOS/ folder).
+        SWIFT_OBJC_BRIDGING_HEADER: App/SocksEngine/BridgingHeader.h
