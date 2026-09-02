@@ -299,7 +299,14 @@ class Bridge:
 
     def _service(self, t: Tunnel, sock, mask: int) -> None:
         READ, WRITE = selectors.EVENT_READ, selectors.EVENT_WRITE
-        if t.finished:
+        # 一条隧道的两路 socket（local / dev）可能同时出现在同一次 select()
+        # 返回的 events 列表里。若本次循环里先处理的一路已经把整条隧道关闭
+        # （_close 会同时注销并 close 两个 socket，再把 t 从 self.tunnels 丢弃），
+        # 后处理的这路事件所对应的 t 已失效，其 socket fd 已是 -1。此时若继续走到
+        # _update_interest -> _set_interest -> sel.get_key(sock) 会抛
+        # "Invalid file descriptor: -1"，进而炸掉整个事件循环。
+        # 用「t 是否已不在 self.tunnels」来短路跳过这种残留事件。
+        if t.finished or t not in self.tunnels:
             return
         try:
             if sock is t.local:
@@ -386,10 +393,16 @@ class Bridge:
         selectors 不允许 events=0（会抛 ValueError），所以「暂时无事可做」
         必须表达为退订，而不是注册一个空事件集。
         """
+        # 双保险：若 socket 已被关闭（fd == -1），get_key 会抛
+        # "Invalid file descriptor: -1"。这里在调用 get_key 之前直接跳过，
+        # 避免上游守卫（t not in self.tunnels）万一漏判时仍炸循环。
+        if sock.fileno() < 0:
+            return
         try:
             self.sel.get_key(sock)
             registered = True
-        except KeyError:
+        except (KeyError, ValueError):
+            # ValueError 说明 socket 已被关闭（fd == -1），按"未注册"处理
             registered = False
         try:
             if ev:
