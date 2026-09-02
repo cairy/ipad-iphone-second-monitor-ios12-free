@@ -7,13 +7,16 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0D17B84B7B74BDF538310607 /* HevSocksProxy.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA13DBC0480DFA4458908348 /* HevSocksProxy.swift */; };
 		19028690349B2A54AE77E7F8 /* server.c in Sources */ = {isa = PBXBuildFile; fileRef = 96C00C2D32D2EE43D4C0A3AF /* server.c */; };
 		19463B5CEDC2A732CD5545EE /* VideoReceiver.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8BD162F6949C37A494E0A4B /* VideoReceiver.swift */; };
 		38D2EE6E0B65B1791E49B086 /* SocksBridge.c in Sources */ = {isa = PBXBuildFile; fileRef = 2935C4449FBA2475F0428AA5 /* SocksBridge.c */; };
 		3D4D0EA3AEDF36FAB632E7EC /* sblist_delete.c in Sources */ = {isa = PBXBuildFile; fileRef = 738C200CF4B8D44ECEAEDD03 /* sblist_delete.c */; };
 		52AE181B83A9015E4BD157B9 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = D31D10293304F90494CF1032 /* LaunchScreen.storyboard */; };
+		6296F364348BF2C91675F19F /* HevSocks5Server.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 04BC2404D676D3F9BA7D2F14 /* HevSocks5Server.xcframework */; };
 		716DC84F7F03FF998CCFCF2D /* SocksProxy.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9287C3C53DAC1873A60FE82 /* SocksProxy.swift */; };
 		979B14DB6CEC6E9908FE0506 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 067A36546AA0E8BB98C66B3F /* Assets.xcassets */; };
+		AF7E7F59F5796EE7734B222F /* SocksEngineKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12C2DF6D9AA2F9E1CCD2124 /* SocksEngineKind.swift */; };
 		C0B12A851481B8A306F963F0 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B315F6329884FBDABCF68CDB /* AppDelegate.swift */; };
 		DBF57E42AEDBC23498402F88 /* sblist.c in Sources */ = {isa = PBXBuildFile; fileRef = 1C30275D475DE38C1568B7F1 /* sblist.c */; };
 		F163F22AD06ECA70EC848C29 /* ReceiverViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD4E67EEBAADB7ABD549A827 /* ReceiverViewController.swift */; };
@@ -21,6 +24,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		04BC2404D676D3F9BA7D2F14 /* HevSocks5Server.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = HevSocks5Server.xcframework; path = Vendor/HevSocks5Server.xcframework; sourceTree = "<group>"; };
 		067A36546AA0E8BB98C66B3F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		1C30275D475DE38C1568B7F1 /* sblist.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = sblist.c; sourceTree = "<group>"; };
 		2935C4449FBA2475F0428AA5 /* SocksBridge.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = SocksBridge.c; sourceTree = "<group>"; };
@@ -30,8 +34,10 @@
 		5ED145AE1C996C32ABDD8843 /* SocksBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SocksBridge.h; sourceTree = "<group>"; };
 		738C200CF4B8D44ECEAEDD03 /* sblist_delete.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = sblist_delete.c; sourceTree = "<group>"; };
 		96C00C2D32D2EE43D4C0A3AF /* server.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = server.c; sourceTree = "<group>"; };
+		A12C2DF6D9AA2F9E1CCD2124 /* SocksEngineKind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocksEngineKind.swift; sourceTree = "<group>"; };
 		A28BE9AC4C2D52E4949FD21E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		B315F6329884FBDABCF68CDB /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		BA13DBC0480DFA4458908348 /* HevSocksProxy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HevSocksProxy.swift; sourceTree = "<group>"; };
 		BD4E67EEBAADB7ABD549A827 /* ReceiverViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiverViewController.swift; sourceTree = "<group>"; };
 		D31D10293304F90494CF1032 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 		E9287C3C53DAC1873A60FE82 /* SocksProxy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocksProxy.swift; sourceTree = "<group>"; };
@@ -40,11 +46,23 @@
 		F8BD162F6949C37A494E0A4B /* VideoReceiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoReceiver.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFrameworksBuildPhase section */
+		C363DEFCF370369B2BCF4A1F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6296F364348BF2C91675F19F /* HevSocks5Server.xcframework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
 /* Begin PBXGroup section */
 		4D68C38F9C87BD694B9D014C = {
 			isa = PBXGroup;
 			children = (
 				7977B76FA89323621BDA43EC /* App */,
+				C564B1D0B138E6C2AB570CF5 /* Frameworks */,
 				D57B6FCEAA03D50A2FDD4AE8 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -54,9 +72,11 @@
 			children = (
 				B315F6329884FBDABCF68CDB /* AppDelegate.swift */,
 				067A36546AA0E8BB98C66B3F /* Assets.xcassets */,
+				BA13DBC0480DFA4458908348 /* HevSocksProxy.swift */,
 				A28BE9AC4C2D52E4949FD21E /* Info.plist */,
 				D31D10293304F90494CF1032 /* LaunchScreen.storyboard */,
 				BD4E67EEBAADB7ABD549A827 /* ReceiverViewController.swift */,
+				A12C2DF6D9AA2F9E1CCD2124 /* SocksEngineKind.swift */,
 				E9287C3C53DAC1873A60FE82 /* SocksProxy.swift */,
 				F8BD162F6949C37A494E0A4B /* VideoReceiver.swift */,
 				BE7CD99BEC75C5C79316ED40 /* SocksEngine */,
@@ -80,6 +100,14 @@
 			path = SocksEngine;
 			sourceTree = "<group>";
 		};
+		C564B1D0B138E6C2AB570CF5 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				04BC2404D676D3F9BA7D2F14 /* HevSocks5Server.xcframework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		D57B6FCEAA03D50A2FDD4AE8 /* Products */ = {
 			isa = PBXGroup;
 			children = (
@@ -97,6 +125,7 @@
 			buildPhases = (
 				923D3E3F71E6F23CDD5CF230 /* Sources */,
 				31DB1CE37845985002DC8F72 /* Resources */,
+				C363DEFCF370369B2BCF4A1F /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -160,8 +189,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				C0B12A851481B8A306F963F0 /* AppDelegate.swift in Sources */,
+				0D17B84B7B74BDF538310607 /* HevSocksProxy.swift in Sources */,
 				F163F22AD06ECA70EC848C29 /* ReceiverViewController.swift in Sources */,
 				38D2EE6E0B65B1791E49B086 /* SocksBridge.c in Sources */,
+				AF7E7F59F5796EE7734B222F /* SocksEngineKind.swift in Sources */,
 				716DC84F7F03FF998CCFCF2D /* SocksProxy.swift in Sources */,
 				19463B5CEDC2A732CD5545EE /* VideoReceiver.swift in Sources */,
 				DBF57E42AEDBC23498402F88 /* sblist.c in Sources */,
@@ -180,8 +211,12 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				DEVELOPMENT_TEAM = "${DEVELOPMENT_TEAM}";
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"Vendor\"",
+				);
 				INFOPLIST_FILE = App/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 12.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 14.8;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -258,8 +293,12 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				DEVELOPMENT_TEAM = "${DEVELOPMENT_TEAM}";
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"Vendor\"",
+				);
 				INFOPLIST_FILE = App/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 12.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 14.8;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

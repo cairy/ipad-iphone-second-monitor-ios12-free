@@ -632,9 +632,13 @@ int microsocks_main(int argc, char** argv) {
 						dprintf(2, "error: failed to resolve %s\n", p);
 						return 1;
 					}
-					add_auth_ip(&ca);
-					if(q) *(q++) = ',', p = q;
-					else break;
+				add_auth_ip(&ca);
+				if(q) {
+					*(q++) = ',';
+					p = q;
+				} else {
+					break;
+				}
 				}
 				break;
 			case 'q':
