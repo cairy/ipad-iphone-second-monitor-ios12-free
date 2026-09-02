@@ -10,11 +10,13 @@
 
 import Foundation
 
-final class SocksProxy {
+final class SocksProxy: SocksProxying {
 
     private let devicePort: UInt16
     private var started = false
     private let lock = NSLock()
+
+    var engineName: String { "microsocks" }
 
     /// `devicePort` is the TCP port microsocks listens on, inside the iPad.
     /// The Mac side forwards to it over USB via usbmuxd (see mac_socks_bridge.py).

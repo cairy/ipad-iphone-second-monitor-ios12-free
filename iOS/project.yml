@@ -15,14 +15,23 @@ targets:
   LegacyPadDisplay:
     type: application
     platform: iOS
-    # iPad stuck on iOS 12 is the whole point of this project.
-    deploymentTarget: "12.0"
+    # 真机是 iPad mini 4 / iOS 14.8。hev-socks5-server 的 XCFramework 按
+    # minos 14.8 构建（见规格附录 C），deployment target 必须 ≥ 14.8 才能
+    # 零告警链接；microsocks 引擎本身仍是纯 C，不受此限。
+    deploymentTarget: "14.8"
     sources:
       - path: App
         # Keep the vendored microsocks license file out of the build (it has
         # no file extension and Xcode wouldn't know how to process it).
         excludes:
           - "**/COPYING"
+    dependencies:
+      # hev-socks5-server，SOCKS5 引擎的第二个实现（协程版）。
+      # 静态库（.a 打包成 xcframework），不需要 embed。
+      # 构建方式见 ../iPad端SOCKS引擎升级为hev_实现规格.md 附录 C：
+      #   minos 14.8 / sdk 26.0，只含 iphoneos + iphonesimulator 两片。
+      - framework: Vendor/HevSocks5Server.xcframework
+        embed: false
     info:
       path: App/Info.plist
       properties:
@@ -44,7 +53,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.legacypaddisplay
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        IPHONEOS_DEPLOYMENT_TARGET: "12.0"
+        IPHONEOS_DEPLOYMENT_TARGET: "14.8"
         # Exposes the embedded microsocks C API (App/SocksEngine/SocksBridge.h)
         # to Swift. Path is relative to SOURCE_ROOT (the iOS/ folder).
         SWIFT_OBJC_BRIDGING_HEADER: App/SocksEngine/BridgingHeader.h

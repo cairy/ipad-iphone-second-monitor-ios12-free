@@ -16,7 +16,12 @@ final class ReceiverViewController: UIViewController, VideoReceiverDelegate {
     private let videoView = VideoContainerView()
     private let statusLabel = UILabel()
     private var receiver: VideoReceiver!
-    private let socks = SocksProxy(devicePort: 9001)
+    /// 当前 SOCKS 引擎。用协议类型持有，便于运行期在两套引擎间切换做 A/B。
+    private var socks: SocksProxying = SocksEngine.defaultEngine.makeProxy(port: 9001)
+    private var socksEngine: SocksEngine = SocksEngine.defaultEngine
+    /// 切换进行中时跳过 ensureListening，避免作用在正在退出的旧引擎上。
+    private var isSwappingEngine = false
+    private let toastLabel = UILabel()
     private var lastVideoSize: CGSize = .zero
 
     // Cursor sprite: positioned/sized in normalized [0,1] Mac-display space,
@@ -72,6 +77,19 @@ final class ReceiverViewController: UIViewController, VideoReceiverDelegate {
         scrollPan.maximumNumberOfTouches = 2
         view.addGestureRecognizer(scrollPan)
 
+        // Three-finger long press = 切换 SOCKS 引擎（microsocks <-> hev）。
+        //
+        // 存在的唯一理由：做规格 2.2 的温度 A/B 对照时，能在真机上直接切，
+        // 不用重新编译安装。三指 + cancelsTouchesInView=false 保证正常触控
+        // 转发完全不受影响。
+        let engineSwap = UILongPressGestureRecognizer(target: self, action: #selector(handleEngineSwap(_:)))
+        engineSwap.numberOfTouchesRequired = 3
+        engineSwap.cancelsTouchesInView = false
+        engineSwap.allowableMovement = 20
+        view.addGestureRecognizer(engineSwap)
+
+        setupToast()
+
         NotificationCenter.default.addObserver(self, selector: #selector(appWillEnterForeground),
                                                 name: UIApplication.willEnterForegroundNotification, object: nil)
     }
@@ -81,6 +99,7 @@ final class ReceiverViewController: UIViewController, VideoReceiverDelegate {
     // the last decoded frame. Force a clean reconnect on every return.
     @objc private func appWillEnterForeground() {
         receiver.ensureListening()
+        guard !isSwappingEngine else { return }
         socks.ensureListening()
     }
 
@@ -181,6 +200,65 @@ final class ReceiverViewController: UIViewController, VideoReceiverDelegate {
         let translation = gesture.translation(in: view)
         gesture.setTranslation(.zero, in: view)
         receiver.sendScroll(dx: Double(translation.x), dy: Double(translation.y))
+    }
+
+    // MARK: - SOCKS 引擎切换（仅用于温度 A/B 对照）
+
+    private func setupToast() {
+        toastLabel.textColor = .white
+        toastLabel.font = .systemFont(ofSize: 15, weight: .medium)
+        toastLabel.textAlignment = .center
+        toastLabel.numberOfLines = 0
+        toastLabel.backgroundColor = UIColor(white: 0, alpha: 0.75)
+        toastLabel.translatesAutoresizingMaskIntoConstraints = false
+        toastLabel.alpha = 0
+        toastLabel.isUserInteractionEnabled = false
+        view.addSubview(toastLabel)
+        NSLayoutConstraint.activate([
+            toastLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            toastLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 24),
+            toastLabel.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 20),
+            toastLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -20),
+        ])
+    }
+
+    private func showToast(_ text: String) {
+        toastLabel.text = text
+        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(hideToast), object: nil)
+        UIView.animate(withDuration: 0.15) { self.toastLabel.alpha = 1 }
+        perform(#selector(hideToast), with: nil, afterDelay: 4.0)
+    }
+
+    @objc private func hideToast() {
+        UIView.animate(withDuration: 0.3) { self.toastLabel.alpha = 0 }
+    }
+
+    /// 三指长按触发。切换引擎的耗时步骤全部放到后台队列，避免 stop() 里
+    /// 等待 main_from_str 返回时卡住主线程。
+    @objc private func handleEngineSwap(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began, !isSwappingEngine else { return }
+        isSwappingEngine = true
+
+        let prev = socksEngine
+        let next: SocksEngine = (prev == .microsocks) ? .hev : .microsocks
+        let old = socks
+        showToast("切换 SOCKS 引擎：\(prev.displayName) → \(next.displayName)…")
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            old.stop()
+
+            DispatchQueue.main.async {
+                let proxy = next.makeProxy(port: 9001)
+                let ok = proxy.start()
+                self.socks = proxy
+                self.socksEngine = next
+                self.isSwappingEngine = false
+                self.showToast(ok ? "SOCKS 引擎：\(next.displayName) ✓"
+                                  : "SOCKS 引擎 \(next.displayName) 启动失败 ✗")
+                NSLog("[EngineSwap] %@ -> %@, start ok=%d",
+                      old.engineName, next.displayName, ok)
+            }
+        }
     }
 
     // MARK: - VideoReceiverDelegate
