@@ -39,6 +39,9 @@ targets:
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchStoryboardName: LaunchScreen
+        # 静音音频保活（AudioKeepAlive.swift）：锁屏后进程不挂起，SOCKS 9001 持续可连。
+        UIBackgroundModes:
+          - audio
         UIRequiresFullScreen: true
         UIStatusBarHidden: true
         UISupportedInterfaceOrientations:

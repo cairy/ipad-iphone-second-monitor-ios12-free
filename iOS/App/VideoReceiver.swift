@@ -93,6 +93,50 @@ final class VideoReceiver {
         }
     }
 
+    /// 睡眠：iPad 锁屏/进后台，或 Mac 锁屏联动。向 Mac 广播 `sleeping` 后
+    /// 关闭连接与监听 —— Mac 端（opendisplay fork）收到即拆除虚拟显示器
+    /// （窗口搬回主屏），并挂一个"等唤醒"会话耐心重拨。唤醒后由
+    /// ensureListening() 重新拉起，Mac 的重拨接上即恢复。
+    ///
+    /// 睡眠期间必须拒绝 9000 连接：如果只关连接不关监听，Mac 的唤醒重拨
+    /// 会立刻重建显示器——副屏在没人看的时候"诈尸"。
+    func enterSleep() {
+        closeSession(announcing: "sleeping", status: "Asleep — resumes on wake")
+    }
+
+    /// App 被终止（上滑杀掉）：广播 `closing` 让 Mac 立即结束会话，
+    /// 不用干等 10 秒静默宽限。
+    func shutDown() {
+        closeSession(announcing: "closing", status: "Closed")
+    }
+
+    private func closeSession(announcing type: String, status: String) {
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            var finished = false
+            let finish = {
+                guard !finished else { return }
+                finished = true
+                self.connection?.cancel()
+                self.connection = nil
+                self.listener?.cancel()
+                self.listener = nil
+                self.resetStreamState()
+                self.setConnected(false)
+                self.setStatus(status)
+            }
+            guard let conn = self.connection, conn.state == .ready else {
+                finish()   // 没有活连接也要关监听（见上"诈尸"注释）
+                return
+            }
+            self.sendControl(["type": type], on: conn) {
+                self.queue.async { finish() }
+            }
+            // 发送完成回调在垂死链路上可能永不触发，1s 兜底强制收尾。
+            self.queue.asyncAfter(deadline: .now() + 1) { finish() }
+        }
+    }
+
     /// Call when the app returns to the foreground. iOS suspends our queue
     /// while backgrounded (no background networking mode declared), so the
     /// listener/connection can die silently without ever reaching the
@@ -231,13 +275,17 @@ final class VideoReceiver {
         sendControl(["type": "scroll", "dx": dx, "dy": dy])
     }
 
-    private func sendControl(_ message: [String: Any], on conn: NWConnection? = nil) {
+    private func sendControl(_ message: [String: Any], on conn: NWConnection? = nil,
+                             completion: (() -> Void)? = nil) {
         guard let conn = conn ?? connection,
-              let payload = try? JSONSerialization.data(withJSONObject: message) else { return }
+              let payload = try? JSONSerialization.data(withJSONObject: message) else {
+            completion?()
+            return
+        }
         var header = UInt32(payload.count).bigEndian
         var frame = Data(bytes: &header, count: 4)
         frame.append(payload)
-        conn.send(content: frame, completion: .contentProcessed { _ in })
+        conn.send(content: frame, completion: .contentProcessed { _ in completion?() })
     }
 
     // MARK: - Incoming: read + length-prefixed deframing
