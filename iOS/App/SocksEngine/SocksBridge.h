@@ -29,6 +29,13 @@ void socksbridge_stop(void);
    that. */
 int socksbridge_is_running(void);
 
+/* C 侧 `enum microsocks_state` 的当前值（sockssrv.c）：
+   0 空闲 / 1 启动中 / 2 接收循环中 / 3 已干净停止 / 4 失败（监听 socket 失效）。
+   与 `socksbridge_is_running()` 的区别：后者只看"是否在服务"，这里能区分
+   **为什么**停了。Swift 侧在自愈时打印它——4 意味着被系统回收，是故障；
+   3 只是我们主动 stop，属正常。 */
+int socksbridge_state(void);
+
 #ifdef __cplusplus
 }
 #endif

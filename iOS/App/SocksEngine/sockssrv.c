@@ -188,8 +188,14 @@ struct thread {
    locking when called from different threads. for the same reason we use dprintf,
    which writes directly to an fd. */
 #define dolog(...) do { if(!quiet) dprintf(2, __VA_ARGS__); } while(0)
+/* 致命分支专用：绕过 -q。
+   -q 是为了压掉每条连接的常规日志，但它连「监听 socket 被 iOS 回收」这类
+   唯一需要事后追查的致命事件也一起吞了——那正是当初最难观测的故障。走这条
+   宏的路径一小时内最多出现几次，不会刷屏，且 stderr 在 Xcode 控制台可见。 */
+#define dolog_fatal(...) do { dprintf(2, __VA_ARGS__); } while(0)
 #else
 static void dolog(const char* fmt, ...) { }
+static void dolog_fatal(const char* fmt, ...) { }
 #endif
 
 static struct addrinfo* addr_choose(struct addrinfo* list, union sockaddr_union* bindaddr) {
@@ -730,6 +736,21 @@ int microsocks_main(int argc, char** argv) {
 			usleep(FAILURE_TIMEOUT);
 			continue;
 		}
+		/* iOS may reclaim the listening socket while the app is locked or
+		   inactive (the accept loop is frozen, then resumes on unlock to find
+		   the fd dead). poll() reports that as POLLERR/POLLNVAL with no POLLIN.
+		   Bail out so g_state leaves MSOCKS_RUNNING and the Swift-side liveness
+		   probe stops lying -- otherwise ensureListening() sees "still running"
+		   and never restarts us. */
+		if(apfd.revents & (POLLERR | POLLNVAL)) {
+			/* dolog_fatal 而非 dolog：-q 会吞掉它，而这是唯一能在事后回答
+			   「代理是怎么死的」的一行日志。POLLNVAL 时 s.fd 已失效，下面的
+			   close() 会返回 EBADF，无害（fd 号若已被复用，POLLNVAL 根本不会
+			   出现，那种情况留给端口探针兜底）。 */
+			dolog_fatal("listen socket invalid/dead; shutting down accept loop\n");
+			g_state = MSOCKS_FAILED;
+			break;
+		}
 		if(!(apfd.revents & (POLLIN | POLLHUP))) continue;
 
 		struct client c;
@@ -794,6 +815,11 @@ int microsocks_main(int argc, char** argv) {
 	}
 	sblist_free(threads);
 	server = 0;
-	g_state = MSOCKS_STOPPED;
+	/* 只在「被显式请求停止（g_stop）」这条干净路径上标 STOPPED。若循环是
+	   因为监听 socket 被回收而死（上面 POLLERR/POLLNVAL 分支已置 MSOCKS_FAILED），
+	   则保留 MSOCKS_FAILED——否则 microsocks_state() 会把它报成「已停止」，
+	   掩盖真实的异常死亡，正是当初最难观测的那类故障。两种状态下
+	   microsocks_is_running() 都返回 0，Swift 侧都会自愈，区别只在可观测性。 */
+	if(g_state == MSOCKS_RUNNING) g_state = MSOCKS_STOPPED;
 	return 0;
 }

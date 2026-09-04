@@ -113,3 +113,10 @@ void socksbridge_stop(void) {
 int socksbridge_is_running(void) {
     return g_running && microsocks_is_running() ? 1 : 0;
 }
+
+/* 透出给 Swift 仅用于日志/诊断：区分「被显式停止」(3) 与「监听 socket 被
+   回收而异常死亡」(4)。不用于任何控制流——两种状态下 is_running 都是 0，
+   Swift 侧都会自愈。 */
+int socksbridge_state(void) {
+    return microsocks_state();
+}

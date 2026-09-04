@@ -21,6 +21,11 @@ final class ReceiverViewController: UIViewController, VideoReceiverDelegate {
     private var socksEngine: SocksEngine = SocksEngine.defaultEngine
     /// 切换进行中时跳过 ensureListening，避免作用在正在退出的旧引擎上。
     private var isSwappingEngine = false
+    /// 当前引擎的自愈令牌。切换引擎时先作废再换新（见 SocksRestartToken 注释），
+    /// 用来堵住「看门狗已派发、切换随后开始」这段窗口导致的双引擎抢 9001。
+    private var restartToken = SocksRestartToken()
+    /// 前台看门狗：周期性自检 SOCKS 监听是否存活，死了就自愈（见 healSocks）。
+    private var healthTimer: Timer?
     private let toastLabel = UILabel()
     private var lastVideoSize: CGSize = .zero
 
@@ -92,6 +97,19 @@ final class ReceiverViewController: UIViewController, VideoReceiverDelegate {
 
         NotificationCenter.default.addObserver(self, selector: #selector(appWillEnterForeground),
                                                 name: UIApplication.willEnterForegroundNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(appDidBecomeActive),
+                                                name: UIApplication.didBecomeActiveNotification, object: nil)
+
+        // 看门狗：SOCKS 监听可能在 App 一直停前台时悄悄死掉（锁屏/解锁被系统回收
+        // socket、或本次启动绑定就失败）。这两类情况都不会触发 willEnterForeground，
+        // 甚至 didBecomeActive 也不保证每次都覆盖，所以周期性探针自愈才是真正的兜底。
+        healthTimer = Timer.scheduledTimer(withTimeInterval: 8.0, repeats: true) { [weak self] _ in
+            self?.healSocks()
+        }
+    }
+
+    deinit {
+        healthTimer?.invalidate()
     }
 
     // Backgrounding suspends our networking queue; the listener/connection
@@ -99,8 +117,23 @@ final class ReceiverViewController: UIViewController, VideoReceiverDelegate {
     // the last decoded frame. Force a clean reconnect on every return.
     @objc private func appWillEnterForeground() {
         receiver.ensureListening()
+        healSocks()
+    }
+
+    // 锁屏 -> 解锁触发的是 didBecomeActive，而不是 willEnterForeground。
+    // 不在这里也自愈一次，解锁后监听会一直是死的。
+    @objc private func appDidBecomeActive() {
+        healSocks()
+    }
+
+    /// 统一的前台自愈入口：引擎切换进行中跳过，避免作用在正在退出的旧引擎上。
+    ///
+    /// 主线程只做判断和派发。注意健康探针对 `isSwappingEngine` 的检查发生在
+    /// 派发**之前**，后台任务真正执行重启时可能已经有切换开始了——那一段由
+    /// `restartToken` 兜底（引擎内部会在 stop+start 前再校验一次）。
+    private func healSocks() {
         guard !isSwappingEngine else { return }
-        socks.ensureListening()
+        socks.ensureListening(restartToken)
     }
 
     override func viewDidLayoutSubviews() {
@@ -244,6 +277,11 @@ final class ReceiverViewController: UIViewController, VideoReceiverDelegate {
         let old = socks
         showToast("切换 SOCKS 引擎：\(prev.displayName) → \(next.displayName)…")
 
+        // 立刻作废当前令牌：此刻起，任何已派发到后台的看门狗自愈都不许再把
+        // 旧引擎拉起来（否则它会占住 9001，让新引擎的 start 静默失败）。
+        // 作废必须在主线程、在派发后台任务之前完成，才有意义。
+        restartToken.invalidate()
+
         DispatchQueue.global(qos: .userInitiated).async {
             old.stop()
 
@@ -252,6 +290,8 @@ final class ReceiverViewController: UIViewController, VideoReceiverDelegate {
                 let ok = proxy.start()
                 self.socks = proxy
                 self.socksEngine = next
+                // 新引擎配新令牌，看门狗恢复自愈能力。
+                self.restartToken = SocksRestartToken()
                 self.isSwappingEngine = false
                 self.showToast(ok ? "SOCKS 引擎：\(next.displayName) ✓"
                                   : "SOCKS 引擎 \(next.displayName) 启动失败 ✗")
