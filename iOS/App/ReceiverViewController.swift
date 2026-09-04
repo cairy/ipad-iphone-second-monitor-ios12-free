@@ -74,6 +74,12 @@ final class ReceiverViewController: UIViewController, VideoReceiverDelegate {
         receiver = VideoReceiver(displayLayer: videoView.displayLayer)
         receiver.delegate = self
         control.delegate = self
+        // 锁同步回报：把唯一状态机的结果（appActive && !macLocked）发给 Mac，
+        // BarKit 面板据此显示"副屏活跃/睡眠"。主线程调用，无锁。
+        control.sleepingProvider = { [weak self] in
+            guard let self = self else { return true }
+            return !(self.appActive && !self.macLocked)
+        }
 
         // Bring up the embedded SOCKS5 proxy (microsocks) so the Mac can tunnel
         // traffic through this iPad over USB. Independent of the video listener

@@ -26,6 +26,11 @@ final class ControlChannel {
 
     weak var delegate: ControlChannelDelegate?
 
+    /// 副屏会话状态提供者（主线程调用）：返回 true 表示视频会话处于睡眠。
+    /// ReceiverViewController 用它把唯一状态机的结果回报给 Mac，
+    /// BarKit 面板据此显示"副屏活跃/睡眠"。
+    var sleepingProvider: (() -> Bool)?
+
     static let port: UInt16 = 9002
 
     private var listener: NWListener?
@@ -145,9 +150,25 @@ final class ControlChannel {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
                 self.delegate?.controlChannel(self, macLockedDidChange: locked)
+                // 顺路回报副屏会话状态（发送端是短连接，回完即关）。
+                let sleeping = self.sleepingProvider?() ?? true
+                self.queue.async { [weak self] in
+                    self?.sendReply(["type": "state", "sleeping": sleeping ? 1 : 0])
+                }
             }
         default:
             break
         }
+    }
+
+    /// 回报帧（与入站相同的 4 字节大端长度 + JSON），发给当前连接；
+    /// 连接已关则静默丢弃——回报是增益项。
+    private func sendReply(_ message: [String: Any]) {
+        guard let conn = connection,
+              let payload = try? JSONSerialization.data(withJSONObject: message) else { return }
+        var header = UInt32(payload.count).bigEndian
+        var frame = Data(bytes: &header, count: 4)
+        frame.append(payload)
+        conn.send(content: frame, completion: .contentProcessed { _ in })
     }
 }
