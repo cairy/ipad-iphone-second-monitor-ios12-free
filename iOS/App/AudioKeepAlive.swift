@@ -11,7 +11,8 @@
 // 静音，听感零变化。
 //
 // 副作用（已知、可接受）：
-//  - 控制中心"正在播放"卡片可能出现本 App（playback session 的自然结果）；
+//  - 控制中心"正在播放"卡片实测不会出现（静音 + mixWithOthers，系统不视为
+//    可呈现的播放源）；
 //  - 音频硬件路径常开，耗电小幅增加（相比继续解码视频流的耗电可忽略）；
 //  - App Store 审核可能问询后台音频用途（本项目 sideload 分发，无影响）。
 
@@ -26,6 +27,14 @@ final class AudioKeepAlive {
     private var started = false
     private let lock = NSLock()
 
+    /// 当前是否正在保活（start 成功后为真，stop 后为假）。
+    /// 与写入路径共用同一把锁 —— 否则 lock 只保护了一半，读到的值无意义。
+    var isRunning: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return started
+    }
+
     /// 启动保活。幂等；失败只打日志不抛错 —— 保活是增益项，绝不能反过来
     /// 弄死 App 启动（失败时行为退回原状：锁屏即挂起）。
     func start() {
@@ -34,11 +43,22 @@ final class AudioKeepAlive {
         guard !started else { return }
 
         let session = AVAudioSession.sharedInstance()
+        // 失败回滚：session 一旦激活成功而后续步骤失败，必须把它一并放掉。
+        // 否则 started 仍是 false，stop() 的 `guard started` 会永久挡住释放
+        // 路径 —— session 泄漏，App 持续持有 audio 后台资格，该挂起时挂不掉，
+        // 且调用方按 isRunning=false 认为"没在保活"，连重试 stop 都不会有。
+        var sessionActivated = false
+        defer {
+            if !started && sessionActivated {
+                try? session.setActive(false, options: .notifyOthersOnDeactivation)
+            }
+        }
         do {
             // .playback 是后台音频的必要条件；.mixWithOthers 保证不抢占
             // 用户的音乐/播客。
             try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
             try session.setActive(true)
+            sessionActivated = true
         } catch {
             NSLog("[AudioKeepAlive] audio session 配置失败：\(error)（保活未启用）")
             return
@@ -68,7 +88,32 @@ final class AudioKeepAlive {
             name: AVAudioSession.interruptionNotification, object: nil)
     }
 
+    /// 停止保活。与 start() 配对：停播放器、释放 audio session、移除打断
+    /// 观察者。拔 USB 后调用，让进程能被系统正常挂起，而不是被 audio 后台
+    /// 模式一直撑着整夜耗电。幂等；失败只打日志。
+    func stop() {
+        lock.lock()
+        defer { lock.unlock() }
+        guard started else { return }
+
+        player?.stop()
+        player = nil
+        started = false
+
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setActive(false, options: .notifyOthersOnDeactivation)
+        } catch {
+            NSLog("[AudioKeepAlive] audio session 释放失败：\(error)")
+        }
+        NotificationCenter.default.removeObserver(self,
+            name: AVAudioSession.interruptionNotification, object: nil)
+        NSLog("[AudioKeepAlive] 静音音频保活已停止（进程可被系统挂起）")
+    }
+
     @objc private func handleInterruption(_ note: Notification) {
+        // 已 stop 后系统可能仍投递一次旧通知，跳过避免误打"已恢复"日志。
+        guard started else { return }
         guard let info = note.userInfo,
               let raw = info[AVAudioSessionInterruptionTypeKey] as? UInt,
               let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }

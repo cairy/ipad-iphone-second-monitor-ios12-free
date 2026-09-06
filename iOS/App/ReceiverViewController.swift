@@ -33,6 +33,10 @@ final class ReceiverViewController: UIViewController, VideoReceiverDelegate {
     /// 前台看门狗：周期性自检 SOCKS 监听是否存活，死了就自愈（见 healSocks）。
     private var healthTimer: Timer?
     private let toastLabel = UILabel()
+
+    /// 静音保活当前是否处于开启态（与 AudioKeepAlive.isRunning 对齐）。
+    /// 只在状态翻转时驱动 AudioKeepAlive，避免每帧电池通知都重start。
+    private var keepAliveRunning = false
     private var lastVideoSize: CGSize = .zero
 
     // Cursor sprite: positioned/sized in normalized [0,1] Mac-display space,
@@ -88,9 +92,21 @@ final class ReceiverViewController: UIViewController, VideoReceiverDelegate {
         socks.start()
 
         // 静音音频保活：锁屏后进程不挂起，9001 的 accept 循环照常调度。
-        // 必须在 socks.start() 之后也能正常工作，但放这里与 SOCKS 启动并列，
-        // 语义上是"SOCKS 在锁屏后仍要活着"的前置条件。
+        // 门控由电池充电状态驱动（详见 applyKeepAliveForBatteryState）：连着
+        // 电源（=连着 Mac/USB）= 需要保活；拔线立即停。
+        //
+        // 拉起方式 = 乐观开启 + 立即按真实状态校准：先无条件 start 保留"启动即可用"
+        // 的原有行为（启动时若 batteryState 尚未就绪为 .unknown，不能因此误杀），
+        // 再开监测、注册通知，最后 applyKeepAliveForBatteryState() 把状态收敛到真实值
+        // （启动时已拔线则停；充电中则保持；.unknown 则保守保持乐观开启）。
         AudioKeepAlive.shared.start()
+        keepAliveRunning = AudioKeepAlive.shared.isRunning
+
+        UIDevice.current.isBatteryMonitoringEnabled = true
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(batteryStateChanged),
+            name: UIDevice.batteryStateDidChangeNotification, object: nil)
+        applyKeepAliveForBatteryState()
 
         // Mac 锁屏联动控制通道（9002，仅 loopback，与 SOCKS/视频互不干扰）。
         control.start()
@@ -132,11 +148,97 @@ final class ReceiverViewController: UIViewController, VideoReceiverDelegate {
         // 甚至 didBecomeActive 也不保证每次都覆盖，所以周期性探针自愈才是真正的兜底。
         healthTimer = Timer.scheduledTimer(withTimeInterval: 8.0, repeats: true) { [weak self] _ in
             self?.healSocks()
+            self?.keepAliveTick()
         }
     }
 
     deinit {
         healthTimer?.invalidate()
+    }
+
+    // MARK: - 静音保活门控（电池充电状态驱动）
+
+    /// 电池状态变化回调：连着电源（充电中 / 已充满且连电）= 连着 Mac/USB，
+    /// 需要保活让锁屏后进程不挂起；拔线变 .unplugged 立即停。
+    ///
+    /// batteryState 不区分电源类型（充电器/充电宝也算 .charging/.full），但本
+    /// 程序只在连 Mac 用副屏时运行；一旦拔 Mac 停保活，进程失去后台模式被系统
+    /// 挂起，后续插充电器也不会再唤醒它 —— 因此"误判常开"仅在"运行中把 Mac
+    /// 线换插充电器"这一种窄场景，且只是多耗一点电，无害。
+    @objc private func batteryStateChanged() {
+        applyKeepAliveForBatteryState()
+    }
+
+    private func applyKeepAliveForBatteryState() {
+        switch UIDevice.current.batteryState {
+        case .charging, .full:
+            setKeepAlive(true)
+        case .unplugged:
+            setKeepAlive(false)
+        case .unknown:
+            // monitoring 尚未就绪：保守保持现状，不贸然停（避免启动瞬间误杀保活）
+            break
+        @unknown default:
+            setKeepAlive(false)
+        }
+    }
+
+    /// 保活开关的唯一出口：只在状态翻转时才动 AudioKeepAlive。
+    private func setKeepAlive(_ on: Bool) {
+        guard on != keepAliveRunning else { return }
+        if on {
+            AudioKeepAlive.shared.start()
+            // 以 AudioKeepAlive 的实际状态为准：start() 内部失败时（session
+            // 被电话/Siri 占用、WAV 写不进去）started 仍为 false。这里若记
+            // 成 true，后续就不会再尝试续命了。
+            keepAliveRunning = AudioKeepAlive.shared.isRunning
+            if keepAliveRunning {
+                keepAliveLog("USB 已连（充电中）→ 静音保活已开启")
+            }
+        } else {
+            // 先打日志再停保活：stop() 内部 setActive(false) 交出后台资格，系统
+            // 可在其后任意时刻挂起进程，日志放在交出资格之后有被漏掉的风险。
+            keepAliveLog("已拔线（停止充电）→ 静音保活已停止（进程可被系统挂起）")
+            AudioKeepAlive.shared.stop()
+            keepAliveRunning = false
+        }
+    }
+
+    /// 保活续命：start() 失败时（如那一刻 audio session 被电话/Siri 占用）
+    /// keepAliveRunning 保持 false，门控只在电池状态翻转时才重试 —— 若一直
+    /// 插着电，保活就一直缺席到下次拔插。借已有的 8s 看门狗补一次重试。
+    ///
+    /// 节流：持续失败时 start() 每次都会 NSLog 一条，8s 一撞会把控制台刷满、
+    /// 干扰真机验证时的日志判读。攒够 8 次（约 64s）才重试一次足够。
+    private func keepAliveTick() {
+        switch UIDevice.current.batteryState {
+        case .charging, .full:
+            guard !keepAliveRunning else { keepAliveRetryTick = 0; return }
+            keepAliveRetryTick += 1
+            if keepAliveRetryTick >= 8 {
+                keepAliveRetryTick = 0
+                setKeepAlive(true)
+            }
+        case .unplugged, .unknown:
+            // .unknown 保守不动，与 applyKeepAliveForBatteryState 保持一致
+            keepAliveRetryTick = 0
+        @unknown default:
+            keepAliveRetryTick = 0
+        }
+    }
+    /// keepAliveTick 的重试节流计数（见该方法注释）。
+    private var keepAliveRetryTick = 0
+
+    /// 保活状态变更日志。只走 NSLog（Xcode → Devices → Open Console 可见），
+    /// 不落盘。
+    ///
+    /// 这里原本还有一段写 Library/Caches/keepalive.log 的落盘逻辑，是专为验证
+    /// "拔线瞬间门控是否真触发"临时加的脚手架 —— 拔线时 USB 调试通道随之中断，
+    /// 实时日志看不到那关键一行，只能先落盘、重插后离线读。已在 2026-09-06
+    /// 真机验证通过后移除：它会在 Caches 下只增不减，而系统只在存储告急时才回收。
+    /// 若将来还要复验，临时把文件写入加回来即可。
+    private func keepAliveLog(_ msg: String) {
+        NSLog("[KeepAlive] \(msg)")
     }
 
     // Backgrounding suspends our networking queue; the listener/connection
