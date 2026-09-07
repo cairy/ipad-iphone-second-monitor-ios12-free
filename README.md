@@ -65,7 +65,6 @@ ipad12-second-screen/
       VideoReceiver.swift    <- core: TCP listener, frame deframing, H.264 decode, control message send/recv
       HevSocksProxy.swift    <- in-app SOCKS5 server (hev-socks5-server), started on 127.0.0.1:9001
       AudioKeepAlive.swift   <- silent-audio background keep-alive, gated on charge state
-      ControlChannel.swift   <- 9002 control channel: Mac lock-screen sync
     Vendor/
       HevSocks5Server.xcframework  <- prebuilt hev-socks5-server (static lib, minos 14.8)
   Mac/                    <- git submodule, upstream OpenDisplay, UNMODIFIED, GPL-3.0

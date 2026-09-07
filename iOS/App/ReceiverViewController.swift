@@ -16,12 +16,9 @@ final class ReceiverViewController: UIViewController, VideoReceiverDelegate {
     private let videoView = VideoContainerView()
     private let statusLabel = UILabel()
     private var receiver: VideoReceiver!
-    /// Mac 锁屏联动通道（BarKit 经 usbmuxd 发 macLock 消息，端口 9002）。
-    private let control = ControlChannel()
-    /// 副屏会话状态机的两个输入（见 updateSessionState）：App 是否活跃、
-    /// Mac 是否锁屏。两者任一不满足 → 视频会话进入睡眠（Mac 拆显示器）。
+    /// 副屏会话状态机的唯一输入（见 updateSessionState）：App 是否活跃，
+    /// 不活跃 → 视频会话进入睡眠（Mac 拆显示器）。
     private var appActive = true
-    private var macLocked = false
     /// SOCKS5 引擎（hev-socks5-server，见 HevSocksProxy）。
     private let socks = HevSocksProxy(port: 9001)
     /// 前台看门狗：周期性自检 SOCKS 监听是否存活，死了就自愈（见 healSocks）。
@@ -70,13 +67,6 @@ final class ReceiverViewController: UIViewController, VideoReceiverDelegate {
 
         receiver = VideoReceiver(displayLayer: videoView.displayLayer)
         receiver.delegate = self
-        control.delegate = self
-        // 锁同步回报：把唯一状态机的结果（appActive && !macLocked）发给 Mac，
-        // BarKit 面板据此显示"副屏活跃/睡眠"。主线程调用，无锁。
-        control.sleepingProvider = { [weak self] in
-            guard let self = self else { return true }
-            return !(self.appActive && !self.macLocked)
-        }
 
         // Bring up the embedded SOCKS5 proxy (hev-socks5-server) so the Mac can
         // tunnel traffic through this iPad over USB. Independent of the video
@@ -100,9 +90,6 @@ final class ReceiverViewController: UIViewController, VideoReceiverDelegate {
             self, selector: #selector(batteryStateChanged),
             name: UIDevice.batteryStateDidChangeNotification, object: nil)
         applyKeepAliveForBatteryState()
-
-        // Mac 锁屏联动控制通道（9002，仅 loopback，与 SOCKS/视频互不干扰）。
-        control.start()
 
         UIApplication.shared.isIdleTimerDisabled = true
 
@@ -250,19 +237,20 @@ final class ReceiverViewController: UIViewController, VideoReceiverDelegate {
         receiver.shutDown()
     }
 
-    /// 副屏会话唯一状态机：活跃 且 Mac 未锁屏 → 显示器在；否则睡眠。
-    /// 所有生命周期/联动入口都汇到这里，避免两路信号互相打架
-    /// （如"Mac 解锁但 iPad 还在后台"时显示器诈尸）。
+    /// 副屏会话唯一状态机：App 活跃 → 显示器在；否则睡眠。
+    /// 所有生命周期入口都汇到这里。
     private func updateSessionState() {
-        let shouldStream = appActive && !macLocked
-        if shouldStream {
+        if appActive {
             receiver.ensureListening()
         } else {
             receiver.enterSleep()
         }
-        // Mac 锁屏时黑屏兜底（此刻显示器已拆，这层黑只是视觉提示）。
-        videoView.isHidden = macLocked
         updateStatusVisibility()
+    }
+
+    /// 状态条文案唯一出口：跟随连接状态隐藏/显示。
+    private func updateStatusVisibility() {
+        statusLabel.isHidden = receiver.isConnected
     }
 
     /// 统一的前台自愈入口。主线程只做派发，探针与重启都在 HevSocksProxy 的
@@ -398,29 +386,5 @@ final class ReceiverViewController: UIViewController, VideoReceiverDelegate {
         cursorNormSize = normSize
         cursorLayer.isHidden = !cursorVisible
         updateCursorLayout()
-    }
-}
-
-// MARK: - ControlChannelDelegate（Mac 锁屏联动）
-
-extension ReceiverViewController: ControlChannelDelegate {
-
-    /// Mac 锁屏状态变化 → 交给唯一状态机处理（显示器随之拆/建）。
-    func controlChannel(_ channel: ControlChannel, macLockedDidChange locked: Bool) {
-        guard macLocked != locked else { return }
-        macLocked = locked
-        NSLog("[ControlChannel] Mac 侧%@", locked ? "已锁屏 → 副屏显示器拆除" : "已解锁 → 恢复副屏")
-        updateSessionState()
-    }
-
-    /// 状态条文案唯一出口：Mac 锁屏时显示联动状态（黑屏上能看到"Mac 已锁屏"
-    /// 说明联动通道活着），否则跟随连接状态隐藏/显示。
-    private func updateStatusVisibility() {
-        if macLocked {
-            statusLabel.text = "Mac 已锁屏"
-            statusLabel.isHidden = false
-        } else {
-            statusLabel.isHidden = receiver.isConnected
-        }
     }
 }
