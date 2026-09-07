@@ -22,17 +22,10 @@ final class ReceiverViewController: UIViewController, VideoReceiverDelegate {
     /// Mac 是否锁屏。两者任一不满足 → 视频会话进入睡眠（Mac 拆显示器）。
     private var appActive = true
     private var macLocked = false
-    /// 当前 SOCKS 引擎。用协议类型持有，便于运行期在两套引擎间切换做 A/B。
-    private var socks: SocksProxying = SocksEngine.defaultEngine.makeProxy(port: 9001)
-    private var socksEngine: SocksEngine = SocksEngine.defaultEngine
-    /// 切换进行中时跳过 ensureListening，避免作用在正在退出的旧引擎上。
-    private var isSwappingEngine = false
-    /// 当前引擎的自愈令牌。切换引擎时先作废再换新（见 SocksRestartToken 注释），
-    /// 用来堵住「看门狗已派发、切换随后开始」这段窗口导致的双引擎抢 9001。
-    private var restartToken = SocksRestartToken()
+    /// SOCKS5 引擎（hev-socks5-server，见 HevSocksProxy）。
+    private let socks = HevSocksProxy(port: 9001)
     /// 前台看门狗：周期性自检 SOCKS 监听是否存活，死了就自愈（见 healSocks）。
     private var healthTimer: Timer?
-    private let toastLabel = UILabel()
 
     /// 静音保活当前是否处于开启态（与 AudioKeepAlive.isRunning 对齐）。
     /// 只在状态翻转时驱动 AudioKeepAlive，避免每帧电池通知都重start。
@@ -85,10 +78,10 @@ final class ReceiverViewController: UIViewController, VideoReceiverDelegate {
             return !(self.appActive && !self.macLocked)
         }
 
-        // Bring up the embedded SOCKS5 proxy (microsocks) so the Mac can tunnel
-        // traffic through this iPad over USB. Independent of the video listener
-        // -- it owns its own thread and is never torn down by the foreground
-        // reconnect logic below.
+        // Bring up the embedded SOCKS5 proxy (hev-socks5-server) so the Mac can
+        // tunnel traffic through this iPad over USB. Independent of the video
+        // listener -- it owns its own queue and is never torn down by the
+        // foreground reconnect logic below.
         socks.start()
 
         // 静音音频保活：锁屏后进程不挂起，9001 的 accept 循环照常调度。
@@ -118,19 +111,6 @@ final class ReceiverViewController: UIViewController, VideoReceiverDelegate {
         scrollPan.minimumNumberOfTouches = 2
         scrollPan.maximumNumberOfTouches = 2
         view.addGestureRecognizer(scrollPan)
-
-        // Three-finger long press = 切换 SOCKS 引擎（microsocks <-> hev）。
-        //
-        // 存在的唯一理由：做规格 2.2 的温度 A/B 对照时，能在真机上直接切，
-        // 不用重新编译安装。三指 + cancelsTouchesInView=false 保证正常触控
-        // 转发完全不受影响。
-        let engineSwap = UILongPressGestureRecognizer(target: self, action: #selector(handleEngineSwap(_:)))
-        engineSwap.numberOfTouchesRequired = 3
-        engineSwap.cancelsTouchesInView = false
-        engineSwap.allowableMovement = 20
-        view.addGestureRecognizer(engineSwap)
-
-        setupToast()
 
         NotificationCenter.default.addObserver(self, selector: #selector(appWillEnterForeground),
                                                 name: UIApplication.willEnterForegroundNotification, object: nil)
@@ -285,14 +265,10 @@ final class ReceiverViewController: UIViewController, VideoReceiverDelegate {
         updateStatusVisibility()
     }
 
-    /// 统一的前台自愈入口：引擎切换进行中跳过，避免作用在正在退出的旧引擎上。
-    ///
-    /// 主线程只做判断和派发。注意健康探针对 `isSwappingEngine` 的检查发生在
-    /// 派发**之前**，后台任务真正执行重启时可能已经有切换开始了——那一段由
-    /// `restartToken` 兜底（引擎内部会在 stop+start 前再校验一次）。
+    /// 统一的前台自愈入口。主线程只做派发，探针与重启都在 HevSocksProxy 的
+    /// 后台队列里完成（见 `HevSocksProxy.ensureListening`）。
     private func healSocks() {
-        guard !isSwappingEngine else { return }
-        socks.ensureListening(restartToken)
+        socks.ensureListening()
     }
 
     override func viewDidLayoutSubviews() {
@@ -392,72 +368,6 @@ final class ReceiverViewController: UIViewController, VideoReceiverDelegate {
         let translation = gesture.translation(in: view)
         gesture.setTranslation(.zero, in: view)
         receiver.sendScroll(dx: Double(translation.x), dy: Double(translation.y))
-    }
-
-    // MARK: - SOCKS 引擎切换（仅用于温度 A/B 对照）
-
-    private func setupToast() {
-        toastLabel.textColor = .white
-        toastLabel.font = .systemFont(ofSize: 15, weight: .medium)
-        toastLabel.textAlignment = .center
-        toastLabel.numberOfLines = 0
-        toastLabel.backgroundColor = UIColor(white: 0, alpha: 0.75)
-        toastLabel.translatesAutoresizingMaskIntoConstraints = false
-        toastLabel.alpha = 0
-        toastLabel.isUserInteractionEnabled = false
-        view.addSubview(toastLabel)
-        NSLayoutConstraint.activate([
-            toastLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            toastLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 24),
-            toastLabel.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 20),
-            toastLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -20),
-        ])
-    }
-
-    private func showToast(_ text: String) {
-        toastLabel.text = text
-        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(hideToast), object: nil)
-        UIView.animate(withDuration: 0.15) { self.toastLabel.alpha = 1 }
-        perform(#selector(hideToast), with: nil, afterDelay: 4.0)
-    }
-
-    @objc private func hideToast() {
-        UIView.animate(withDuration: 0.3) { self.toastLabel.alpha = 0 }
-    }
-
-    /// 三指长按触发。切换引擎的耗时步骤全部放到后台队列，避免 stop() 里
-    /// 等待 main_from_str 返回时卡住主线程。
-    @objc private func handleEngineSwap(_ gesture: UILongPressGestureRecognizer) {
-        guard gesture.state == .began, !isSwappingEngine else { return }
-        isSwappingEngine = true
-
-        let prev = socksEngine
-        let next: SocksEngine = (prev == .microsocks) ? .hev : .microsocks
-        let old = socks
-        showToast("切换 SOCKS 引擎：\(prev.displayName) → \(next.displayName)…")
-
-        // 立刻作废当前令牌：此刻起，任何已派发到后台的看门狗自愈都不许再把
-        // 旧引擎拉起来（否则它会占住 9001，让新引擎的 start 静默失败）。
-        // 作废必须在主线程、在派发后台任务之前完成，才有意义。
-        restartToken.invalidate()
-
-        DispatchQueue.global(qos: .userInitiated).async {
-            old.stop()
-
-            DispatchQueue.main.async {
-                let proxy = next.makeProxy(port: 9001)
-                let ok = proxy.start()
-                self.socks = proxy
-                self.socksEngine = next
-                // 新引擎配新令牌，看门狗恢复自愈能力。
-                self.restartToken = SocksRestartToken()
-                self.isSwappingEngine = false
-                self.showToast(ok ? "SOCKS 引擎：\(next.displayName) ✓"
-                                  : "SOCKS 引擎 \(next.displayName) 启动失败 ✗")
-                NSLog("[EngineSwap] %@ -> %@, start ok=%d",
-                      old.engineName, next.displayName, ok)
-            }
-        }
     }
 
     // MARK: - VideoReceiverDelegate

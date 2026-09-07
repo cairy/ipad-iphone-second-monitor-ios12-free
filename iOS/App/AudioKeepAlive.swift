@@ -4,7 +4,7 @@
 //
 // 原理：iOS 对持有 `audio` background mode 且正在渲染音频的进程不挂起。
 // 这里循环播放一段程序生成的静音 WAV，成本约等于零（数据全 0，DAC 路径
-// 空转），换来的是锁屏后 microsocks/hev 的 accept 循环照常调度。
+// 空转），换来的是锁屏后 hev 引擎的 accept 循环照常调度。
 //
 // 对其他音频的影响：category 用 .playback + .mixWithOthers —— 与音乐/
 // 播客混音共存，不独占、不打断、不 duck。用户放歌时我们只是混进去一段

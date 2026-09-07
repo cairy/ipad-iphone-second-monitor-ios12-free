@@ -1,9 +1,9 @@
 // HevSocksProxy.swift
 //
 // Swift wrapper around the embedded hev-socks5-server
-// (iOS/Vendor/HevSocks5Server.xcframework).
+// (iOS/Vendor/HevSocks5Server.xcframework). 这是本项目唯一的 SOCKS5 引擎。
 //
-// 与 microsocks 的 SocksProxy 有三处关键差异，改动前先读：
+// 三条改动前必读的约束（都踩过坑）：
 //
 // 1) `hev_socks5_server_main_from_str()` 是**两参数**（str + len），少传长度
 //    在 C 里不会报错，只会偶发解析失败——极难定位。
@@ -18,7 +18,7 @@ import Foundation
 // 既是依赖声明，也避免未来工具链收紧隐式导入导致「use of unresolved identifier」。
 import HevSocks5Server
 
-final class HevSocksProxy: SocksProxying {
+final class HevSocksProxy {
 
     private let port: UInt16
     private let bindInterface: String
@@ -45,13 +45,12 @@ final class HevSocksProxy: SocksProxying {
     private var consecutiveFailures = 0
     private let maxConsecutiveFailures = 3
 
-    var engineName: String { "hev" }
-
     /// 真实端口探针：现在能否连上 `127.0.0.1:port`。
     ///
     /// 早期实现只返回 `running`（引擎循环还活着），无法发现 iOS 回收了监听
-    /// socket 的情况——表现为「App 以为在监听，Mac 侧却 ConnectionRefused」。
-    /// 这里用一次带短超时的 TCP connect 兜底，让看门狗能真正自愈。
+    /// socket 的情况——表现为「App 以为在监听，Mac 侧却 ConnectionRefused」，
+    /// 曾导致 9001 被死占、必须杀 App 才能恢复。这里用一次带短超时的 TCP
+    /// connect 兜底，让看门狗能真正自愈。
     ///
     /// 探测成功即关闭连接，不参与 SOCKS 握手，对 hev 无副作用；端口正常时
     /// 回环连接瞬时成功，不会卡顿。仅当端口真死时 connect 才阻塞到超时
@@ -75,11 +74,10 @@ final class HevSocksProxy: SocksProxying {
         return res == 0
     }
 
-    /// - parameter bindInterface: 强制出站走这个网络接口，等价于 microsocks
-    ///   时代 Network.framework 的 `requiredInterfaceType = .wifi`。
-    ///   iPad 的 Wi-Fi 通常是 `en0`，但**必须在真机上确认**。填错的后果是
-    ///   `set_sock_bind()` 返回 -1，每个连接都在握手阶段直接失败——症状是
-    ///   「能连上代理但打不开任何页面」。排查时把它改成 ""（不绑接口）即可区分。
+    /// - parameter bindInterface: 强制出站走这个网络接口。iPad 的 Wi-Fi 通常是
+    ///   `en0`（本仓真机已验证）。填错的后果是 `set_sock_bind()` 返回 -1，
+    ///   每个连接都在握手阶段直接失败——症状是「能连上代理但打不开任何页面」。
+    ///   排查时把它改成 ""（不绑接口）即可区分。
     init(port: UInt16 = 9001, bindInterface: String = "en0", logLevel: String = "warn") {
         self.port = port
         self.bindInterface = bindInterface
@@ -139,7 +137,8 @@ final class HevSocksProxy: SocksProxying {
         }
     }
 
-    func ensureListening(_ token: SocksRestartToken) {
+    /// 看门狗自愈入口：探针失败连续 N 次才 stop+start。
+    func ensureListening() {
         // 整个「探针 + 可能的重启」都派发到后台队列，主线程完全不阻塞。
         // 见 watchdogQueue / maxConsecutiveFailures 两处注释。
         watchdogQueue.async { [weak self] in
@@ -156,11 +155,6 @@ final class HevSocksProxy: SocksProxying {
             NSLog("[HevSocks] 端口探针失败（连续 %d/%d 次）", n, self.maxConsecutiveFailures)
             // 只有连续多次失败才真重启，避免 hev 高负载下一两次慢 connect 误判。
             guard n >= self.maxConsecutiveFailures else { return }
-            // 切换引擎会作废旧令牌：此时旧引擎已被停用，拉起来只会抢回 9001。
-            guard token.isValid else {
-                NSLog("[HevSocks] 自愈令牌已失效（引擎切换中），放弃本次重启")
-                return
-            }
             self.resetFailures()
             // stop 的 group.wait(timeout:5s) 在后台队列上，不卡 UI。
             NSLog("[HevSocks] 连续 %d 次探针失败，执行 stop+start 自愈", self.maxConsecutiveFailures)

@@ -1,6 +1,11 @@
-# Turn an iPad or iPhone stuck on iOS 12 into a second display for your Mac (macOS 26), over Lightning or Wi-Fi — free, self-hosted
+# Turn an old iPad or iPhone (iOS 14.8+) into a second display for your Mac (macOS 26), over Lightning or Wi-Fi — free, self-hosted
 
-**Built and running for real** on an iPad Air (Model A1475, iOS 12.5.8), both over a Lightning cable and over Wi-Fi. H.264 video + touch + two-finger scroll + a real mouse cursor all work reliably.
+**Built and running for real** on an iPad mini 4 (iOS 14.8), both over a Lightning cable and over Wi-Fi. H.264 video + touch + two-finger scroll + a real mouse cursor all work reliably.
+
+> Heads-up: the deployment target was raised from 12.0 to **14.8** when the
+> SOCKS5 engine moved to hev-socks5-server (its prebuilt static library is
+> built with minos 14.8). If you need a true iOS 12 device, stay on the
+> commits before that change — the display part itself never needed 14.8.
 
 No cable required: the Mac app auto-discovers the iPad over Bonjour on the
 same Wi-Fi network and connects directly. It prefers USB when a cable is
@@ -9,7 +14,7 @@ otherwise — you don't have to choose a mode, it just works either way.
 
 ## Keywords / What this is
 
-Use an **old iPad on iOS 12 / 12.5.x** as a **free second display for Mac**
+Use an **old iPad on iOS 14.8+** as a **free second display for Mac**
 (Apple Silicon or Intel, modern macOS). Open-source alternative to
 **Sidecar**, **Duet Display**, and **Luna Display** for devices too old to
 run OpenDisplay's own client (which needs iPadOS 17+). Works over
@@ -18,7 +23,7 @@ run OpenDisplay's own client (which needs iPadOS 17+). Works over
 | | This project | Sidecar | Duet Display | Luna Display | OpenDisplay (official client) |
 |---|---|---|---|---|---|
 | Cost | Free | Free | Free tier + paid | Paid (hardware dongle) | Free |
-| Min iOS/iPadOS | **12.0** | 13+ (needs macOS Catalina+ on the Mac side) | 12+ | 12+ | 17+ |
+| Min iOS/iPadOS | **14.8** | 13+ (needs macOS Catalina+ on the Mac side) | 12+ | 12+ | 17+ |
 | Open source | iOS client: yes (MIT). Mac app: yes (GPL-3.0, upstream) | No | No | No | Yes (GPL-3.0) |
 | Connection | USB/Lightning or Wi-Fi | USB or Wi-Fi | USB or Wi-Fi | USB or Wi-Fi (dongle) | USB or Wi-Fi |
 | Needs a companion Mac app you build yourself | Yes | No | No | No | Yes |
@@ -35,8 +40,8 @@ Skip the paid apps (Duet Display, Luna Display...). Instead:
    via Bonjour) or by talking directly to macOS's `usbmuxd` over
    Lightning/USB-C — **no extra tool like `iproxy` needed.**
 2. **iPad side**: OpenDisplay requires iPadOS 17+, so it **can't be
-   installed on an iOS 12 iPad**. That's why the `iOS/` folder in this repo
-   is a **purpose-built iOS 12 client**: a clean-room reimplementation of
+   installed on an iPad stuck on iOS 14.8**. That's why the `iOS/` folder in
+   this repo is a **purpose-built iOS 14.8 client**: a clean-room reimplementation of
    OpenDisplay's network protocol (read from their public source), so it
    can talk to the unmodified Mac app above without touching it.
 
@@ -50,7 +55,7 @@ reimplementing the whole pipeline from scratch.
 ipad12-second-screen/
   README.md
   LICENSE                 <- MIT, covers iOS/ (code written for this project)
-  iOS/                    <- iOS 12 client, original code, MIT
+  iOS/                    <- iOS client, original code, MIT
     LegacyPadDisplay.xcodeproj  <- committed and ready to open, no build step
     project.yml           <- xcodegen config (source of truth if you edit the project;
                               re-run `xcodegen generate` after changing it)
@@ -58,12 +63,11 @@ ipad12-second-screen/
       AppDelegate.swift
       ReceiverViewController.swift  <- fullscreen video view + touch/scroll capture + cursor sprite
       VideoReceiver.swift    <- core: TCP listener, frame deframing, H.264 decode, control message send/recv
-      SocksProxy.swift       <- starts the in-app SOCKS5 server (microsocks) and keeps it alive
-      SocksEngine/           <- vendored microsocks (MIT, see COPYING) + SocksBridge.c/h (C bridge)
-      LaunchScreen.storyboard
-      Assets.xcassets/
-  tools/
-    mac_socks_bridge.py    <- Mac-side bridge: localhost:port -> USB (usbmuxd) -> iPad:9001, no deps
+      HevSocksProxy.swift    <- in-app SOCKS5 server (hev-socks5-server), started on 127.0.0.1:9001
+      AudioKeepAlive.swift   <- silent-audio background keep-alive, gated on charge state
+      ControlChannel.swift   <- 9002 control channel: Mac lock-screen sync
+    Vendor/
+      HevSocks5Server.xcframework  <- prebuilt hev-socks5-server (static lib, minos 14.8)
   Mac/                    <- git submodule, upstream OpenDisplay, UNMODIFIED, GPL-3.0
 ```
 
@@ -72,8 +76,8 @@ ipad12-second-screen/
 is someone else's code (their GPL-3.0 license stays intact), and it's easy
 to `git submodule update --remote` when they cut a new release.
 
-Minimum requirement: **iOS 12.0** (`iOS/project.yml` → `deploymentTarget`),
-tested for real on iOS 12.5.8.
+Minimum requirement: **iOS 14.8** (`iOS/project.yml` → `deploymentTarget`),
+tested for real on an iPad mini 4 running iOS 14.8.
 
 ### Does this work on iPhone too?
 
@@ -147,8 +151,10 @@ the bottom — meaning it's waiting for the Mac to connect.
 
 ### Xcode says "Failed to prepare the device for development"
 
-Recent Xcode versions don't ship **iOS DeviceSupport** for old iOS 12
-builds anymore. You need to add the matching support folder to
+Recent Xcode versions don't ship **iOS DeviceSupport** for older iOS builds
+anymore (iOS 12/12.5 was the original target of this repo, and this recipe
+is kept for anyone who goes back to those commits). You need to add the
+matching support folder to
 `~/Library/Developer/Xcode/iOS DeviceSupport/`. This repo was actually
 brought up using the 12.5 support bundle from
 [apptim/iPhoneOSDeviceSupport](https://github.com/apptim/iPhoneOSDeviceSupport):
@@ -195,20 +201,24 @@ membership ($99/year) — signs for a full year.
 
 ## Optional — Route Mac traffic through the iPad over USB (SOCKS5 proxy)
 
-The iPad app also runs a small SOCKS5 server (microsocks, vendored in
-`iOS/App/SocksEngine/`, started automatically on `127.0.0.1:9001` when the
-app launches). Combined with the Mac-side bridge below, you can tunnel any
-Mac traffic through the iPad's internet connection **over the USB cable** —
-no Wi-Fi needed for the tunnel itself.
+The iPad app also runs a small SOCKS5 server (hev-socks5-server, prebuilt as
+`iOS/Vendor/HevSocks5Server.xcframework`, started automatically on
+`127.0.0.1:9001` when the app launches). Combined with a Mac-side bridge, you
+can tunnel Mac traffic through the iPad's Wi-Fi **over the USB cable** — the
+tunnel itself needs no Wi-Fi on the Mac side.
 
-Use cases: give the Mac an egress path via the iPad's LTE when the Mac is on
-a locked-down / 802.1X Wi-Fi network, or run a fully cable-only setup. This
-is independent of the display feature and never touches it.
+Use cases: give the Mac a second egress when it sits on a locked-down /
+802.1X network, or run a fully cable-only setup. This is independent of the
+display feature and never touches it. Note the iPad still needs its own
+internet path, which for a Wi-Fi-only iPad means the same Wi-Fi.
 
 ### Run it
 
-```bash
-python3 tools/mac_socks_bridge.py --local 1080 --device 9001
+The USB bridge now lives in the BarKit repo (it grew a resident thread and
+link-probe loop there):
+
+```
+barkit/src/barkit/plugins/ipad_tunnel/bridge.py     # --local 1080 --device 9001
 ```
 
 - `--local 1080` — port the bridge listens on, on your Mac (`127.0.0.1:1080`).
@@ -224,13 +234,14 @@ tunnel.
 
 ### How it works
 
-`mac_socks_bridge.py` is pure Python stdlib (no `pip install`). It opens a
-local listener, and for each SOCKS5 connection it tunnels the bytes to the
-iPad over `usbmuxd` (the same USB multiplexer the display uses), where
-microsocks fulfills the request and sends the reply back the same way. The
-iPad app keeps the SOCKS5 server alive across foreground/background
-transitions using its own lifecycle, so the display's listener rebuild never
-kills it.
+The bridge is pure Python stdlib (no `pip install`). It opens a local
+listener, and for each SOCKS5 connection it tunnels the bytes to the iPad
+over `usbmuxd` (the same USB multiplexer the display uses), where
+hev-socks5-server fulfills the request and sends the reply back the same way.
+The iPad app keeps the SOCKS5 server alive across foreground/background
+transitions using its own lifecycle and an 8-second watchdog that probes
+port 9001 and restarts the engine if iOS ever reclaims the listening socket,
+so the display's listener rebuild never kills it.
 
 ## If it won't connect — check these first
 
@@ -264,13 +275,15 @@ display, latency measurement.
 
 ## License
 
-- `iOS/` (iOS 12 client): MIT, see [LICENSE](LICENSE).
+- `iOS/` (iOS client, min 14.8): MIT, see [LICENSE](LICENSE).
+- `iOS/Vendor/HevSocks5Server.xcframework`: prebuilt hev-socks5-server,
+  see its own upstream license.
 - `Mac/`: submodule pointing at `peetzweg/opendisplay`, GPL-3.0, copyright
   held by its original authors — unmodified, not vendored into this repo.
 
 ---
 
-*Keywords: iPad iOS 12 second monitor Mac, old iPad external display,
-Sidecar alternative iOS 12, Duet Display free alternative, Luna Display
-free alternative, OpenDisplay iOS 12 client, Lightning USB second screen,
-legacy iPad second monitor, LegacyPadDisplay.*
+*Keywords: iPad iOS 14 second monitor Mac, old iPad external display,
+Sidecar alternative old iPad, Duet Display free alternative, Luna Display
+free alternative, OpenDisplay legacy client, Lightning USB second screen,
+legacy iPad second monitor, LegacyPadDisplay, SOCKS5 proxy over USB.*

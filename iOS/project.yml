@@ -16,17 +16,12 @@ targets:
     type: application
     platform: iOS
     # 真机是 iPad mini 4 / iOS 14.8。hev-socks5-server 的 XCFramework 按
-    # minos 14.8 构建（见规格附录 C），deployment target 必须 ≥ 14.8 才能
-    # 零告警链接；microsocks 引擎本身仍是纯 C，不受此限。
+    # minos 14.8 构建，deployment target 必须 ≥ 14.8 才能零告警链接。
     deploymentTarget: "14.8"
     sources:
-      - path: App
-        # Keep the vendored microsocks license file out of the build (it has
-        # no file extension and Xcode wouldn't know how to process it).
-        excludes:
-          - "**/COPYING"
+      - App
     dependencies:
-      # hev-socks5-server，SOCKS5 引擎的第二个实现（协程版）。
+      # hev-socks5-server —— 本项目唯一的 SOCKS5 引擎（协程版）。
       # 静态库（.a 打包成 xcframework），不需要 embed。
       # 构建方式见 ../iPad端SOCKS引擎升级为hev_实现规格.md 附录 C：
       #   minos 14.8 / sdk 26.0，只含 iphoneos + iphonesimulator 两片。
@@ -42,6 +37,8 @@ targets:
         # 静音音频保活（AudioKeepAlive.swift）：锁屏后进程不挂起，SOCKS 9001 持续可连。
         UIBackgroundModes:
           - audio
+        # 副屏期间 Wi-Fi 不能睡：iPad 是 Wi-Fi-only，SOCKS 借道全靠它。
+        UIRequiresPersistentWiFi: true
         UIRequiresFullScreen: true
         UIStatusBarHidden: true
         UISupportedInterfaceOrientations:
@@ -57,6 +54,5 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         IPHONEOS_DEPLOYMENT_TARGET: "14.8"
-        # Exposes the embedded microsocks C API (App/SocksEngine/SocksBridge.h)
-        # to Swift. Path is relative to SOURCE_ROOT (the iOS/ folder).
-        SWIFT_OBJC_BRIDGING_HEADER: App/SocksEngine/BridgingHeader.h
+        # hev 是带 modulemap 的 xcframework，Swift 侧直接 `import HevSocks5Server`
+        # 即可，不再需要 Objective-C bridging header。
