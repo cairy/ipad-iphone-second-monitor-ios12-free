@@ -15,6 +15,9 @@ final class ReceiverViewController: UIViewController, VideoReceiverDelegate {
 
     private let videoView = VideoContainerView()
     private let statusLabel = UILabel()
+    /// SOCKS 出口自检行。与视频状态行**同进同出**（见 updateStatusVisibility）：投屏中
+    /// 一并隐藏 —— 副屏是拿去用的，画面上一寸都不让出来。
+    private let socksLabel = UILabel()
     private var receiver: VideoReceiver!
     /// 副屏会话状态机的唯一输入（见 updateSessionState）：App 是否活跃，
     /// 不活跃 → 视频会话进入睡眠（Mac 拆显示器）。
@@ -23,6 +26,18 @@ final class ReceiverViewController: UIViewController, VideoReceiverDelegate {
     private let socks = HevSocksProxy(port: 9001)
     /// 前台看门狗：周期性自检 SOCKS 监听是否存活，死了就自愈（见 healSocks）。
     private var healthTimer: Timer?
+
+    // MARK: - 设置页那个隧道开关（Settings.bundle）
+
+    // 键名必须与 Settings.bundle/Root.plist **同字**：改名要两处一起改，否则开关会
+    // 静默失灵（写进 A 键、读的是 B 键，谁都不报错）。
+    private static let socksAllowedKey = "socks_allowed"
+    private static let socksStatusTextKey = "socks_status_text"
+    private static let socksStatusAtKey = "socks_status_at"
+
+    /// 隧道开关的当前值；`nil` = 还没跟 defaults 对过账。
+    /// **不给 `false` 初值** —— 那样「第一次对账」会被当成「没变化」，引擎永远起不来。
+    private var socksAllowed: Bool?
 
     /// 静音保活当前是否处于开启态（与 AudioKeepAlive.isRunning 对齐）。
     /// 只在状态翻转时驱动 AudioKeepAlive，避免每帧电池通知都重start。
@@ -65,14 +80,36 @@ final class ReceiverViewController: UIViewController, VideoReceiverDelegate {
             statusLabel.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -12),
         ])
 
+        // 引擎自检行：字号更小、颜色更淡 —— 它是「环境信息」，不该跟「连没连上」
+        // 抢同一档注意力。
+        socksLabel.textColor = UIColor.white.withAlphaComponent(0.55)
+        socksLabel.font = .systemFont(ofSize: 11, weight: .regular)
+        socksLabel.textAlignment = .center
+        socksLabel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(socksLabel)
+        NSLayoutConstraint.activate([
+            socksLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            // 压在视频状态行**上方**：状态行贴着底部安全区，往它下面挂会掉出屏幕。
+            socksLabel.bottomAnchor.constraint(equalTo: statusLabel.topAnchor, constant: -6),
+        ])
+
         receiver = VideoReceiver(displayLayer: videoView.displayLayer)
         receiver.delegate = self
 
         // Bring up the embedded SOCKS5 proxy (hev-socks5-server) so the Mac can
-        // tunnel traffic through this iPad over USB. Independent of the video
-        // listener -- it owns its own queue and is never torn down by the
-        // foreground reconnect logic below.
-        socks.start()
+        // tunnel traffic through this iPad over USB. It owns its own queue and is
+        // untouched by the foreground reconnect logic below -- but it IS gated by
+        // the Settings-app switch (`socks_allowed`), see applySocksSwitch.
+        //
+        // 顺序要紧：**先注册 Settings.bundle 的默认值，再读开关**。iOS 只在用户
+        // 打开过设置页之后才把 Root.plist 的 DefaultValue 写进 defaults，在那之前
+        // 读 `socks_allowed` 会拿到 false —— 于是「装好后的第一次启动」会把隧道
+        // 静默关掉，而用户根本没动过开关（这是 Settings.bundle 的老坑）。
+        registerDefaultsFromSettingsBundle()
+        socks.onHealthChange = { [weak self] healthy in
+            self?.renderSocksStatus(healthy)
+        }
+        applySocksSwitch()
 
         // 静音音频保活：锁屏后进程不挂起，9001 的 accept 循环照常调度。
         // 门控由电池充电状态驱动（详见 applyKeepAliveForBatteryState）：连着
@@ -248,16 +285,110 @@ final class ReceiverViewController: UIViewController, VideoReceiverDelegate {
         updateStatusVisibility()
     }
 
-    /// 状态条文案唯一出口：跟随连接状态隐藏/显示。
+    /// 状态条可见性唯一出口：跟随连接状态隐藏/显示。
+    ///
+    /// 视频状态行与引擎自检行**同进同出**：投屏中两行都不画 —— 副屏画面会整屏
+    /// 投到 Mac 上，画上去就是往用户的桌面上贴字。
     private func updateStatusVisibility() {
         statusLabel.isHidden = receiver.isConnected
+        socksLabel.isHidden = receiver.isConnected
     }
 
     /// 统一的前台自愈入口。主线程只做派发，探针与重启都在 HevSocksProxy 的
     /// 后台队列里完成（见 `HevSocksProxy.ensureListening`）。
+    ///
+    /// 顺带对一次开关：iOS 不保证把「用户刚在设置页改的值」实时推进本进程，
+    /// 借每一拍（8s）读一次 bool 兜底 —— 零成本，而且不依赖任何通知。
     private func healSocks() {
+        applySocksSwitch()
+        guard socksAllowed == true else { return }   // 开关为关：不探、也不重启
         socks.ensureListening()
     }
+
+    // MARK: - 设置页那个隧道开关
+
+    /// 把 `Settings.bundle/Root.plist` 里的 DefaultValue 注册成 defaults 的**兜底值**。
+    ///
+    /// 为什么必须自己做：见调用点那段注释（不注册的话，装好后第一次启动会把隧道静默
+    /// 关掉）。`register(defaults:)` 只写「兜底层」，既不落盘、也不覆盖用户改过的值，
+    /// 正好对症。
+    private func registerDefaultsFromSettingsBundle() {
+        var toRegister: [String: Any] = [:]
+        if let url = Bundle.main.url(forResource: "Settings", withExtension: "bundle")?
+            .appendingPathComponent("Root.plist"),
+           let data = try? Data(contentsOf: url),
+           let plist = try? PropertyListSerialization.propertyList(from: data, format: nil),
+           let root = plist as? [String: Any],
+           let specifiers = root["PreferenceSpecifiers"] as? [[String: Any]] {
+            for specifier in specifiers {
+                if let key = specifier["Key"] as? String, let value = specifier["DefaultValue"] {
+                    toRegister[key] = value
+                }
+            }
+        } else {
+            NSLog("[Settings] ⚠️ 读不到 Settings.bundle/Root.plist；隧道开关按「开」处理")
+        }
+        // 兜底：即便 plist 没被打进包，也**绝不能**让「读不到默认值」等同于「把隧道关掉」。
+        if toRegister[Self.socksAllowedKey] == nil { toRegister[Self.socksAllowedKey] = true }
+        UserDefaults.standard.register(defaults: toRegister)
+    }
+
+    /// 开关的唯一出口：读一次 defaults，与缓存比对，**只在真变化时**动引擎。
+    ///
+    /// 调用点：启动、回前台、以及每一拍自检（见 healSocks）。
+    ///
+    /// 引擎启动走 `startAsync`（不是 `start()`）：它和 `stopAsync` 共用一条串行队列，
+    /// 「关掉又立刻打开」才不会乱序 —— 主线程直接调 `start()` 会撞上还没停掉的旧实例，
+    /// `guard !running` 直接返回（看着像启动了，其实什么都没做），紧接着停才生效。
+    private func applySocksSwitch() {
+        let allowed = UserDefaults.standard.bool(forKey: Self.socksAllowedKey)
+        guard allowed != socksAllowed else { return }   // 没变：一拍一次的空转，不动引擎
+        socksAllowed = allowed
+        if allowed {
+            NSLog("[HevSocks] 设置页开关为开：启动引擎")
+            socks.startAsync()
+        } else {
+            NSLog("[HevSocks] 设置页开关为关：停止引擎，9001 不再监听")
+            socks.stopAsync { [weak self] in
+                guard let self else { return }
+                self.renderSocksStatus(self.socks.health)
+            }
+        }
+        renderSocksStatus(socks.health)
+    }
+
+    /// 引擎状态的**唯一文案出口**：屏上那行与设置页那两行取同一份字符串
+    /// （一处算、多处显示；不许各自再拼一遍，否则两处迟早说不一样的话）。
+    private func renderSocksStatus(_ healthy: Bool?) {
+        let text: String
+        if socksAllowed != true {
+            // 开关为关时**不看** healthy：这时引擎本来就该是停的，报「无应答」是误读。
+            text = "本机不充当局域网出口（设置里已关）"
+        } else {
+            switch healthy {
+            case .some(true):  text = "SOCKS 出口正常（9001 在服务）"
+            case .some(false): text = "SOCKS 引擎无应答 · 看门狗自愈重试中"
+            case .none:        text = "SOCKS 出口已开启 · 等待自检"
+            }
+        }
+        if socksLabel.text != text { socksLabel.text = text }
+
+        // 写回 defaults 供设置页那两行显示（那一页打开时读一次，不实时刷新）。
+        // **只在文案变化时才写** —— 每 8s 无脑写一次会不停惊动 defaults 的观察者，
+        // 也会让「上次自检时刻」变成「上一次心跳」而失去意义。
+        let defaults = UserDefaults.standard
+        if defaults.string(forKey: Self.socksStatusTextKey) != text {
+            defaults.set(text, forKey: Self.socksStatusTextKey)
+            defaults.set(Self.stamp.string(from: Date()), forKey: Self.socksStatusAtKey)
+        }
+    }
+
+    /// 「上次自检时刻」的格式。只到秒 —— 要判的是「这份记录是不是几分钟前的」。
+    private static let stamp: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss"
+        return f
+    }()
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()

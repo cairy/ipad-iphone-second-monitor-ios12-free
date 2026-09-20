@@ -18,6 +18,9 @@
 //    「健康」。2026-09-20 真机就停在那个状态：Mac 侧经 usbmuxd 连 9001 秒成、随后
 //    一个字节都不回，而这里因为 connect 成功而 resetFailures()，看门狗永远走不到
 //    stop+start ⇒ 永不自愈（只能杀 App）。见 isServing。
+// 5) **启停一律走 startAsync / stopAsync**（都派发到同一条串行队列）。`stop()` 里那个
+//    5s `group.wait` 绝不能在主线程上等（界面会卡死），而「关掉又立刻打开」也必须
+//    保持先后顺序，否则 start 撞上没停掉的旧实例会静默空转。
 
 import Foundation
 // Xcode 对已链接且带 modulemap 的 framework 会自动隐式 import；这里显式写出，
@@ -51,6 +54,32 @@ final class HevSocksProxy {
     /// 多次失败才真正自愈。
     private var consecutiveFailures = 0
     private let maxConsecutiveFailures = 3
+
+    /// 健康结论的变化回调（**主队列**投递）。`true`/`false` = 探针结论；`nil` = 引擎
+    /// 已被本对象停掉（用户把设置页那个开关关了），健康与否无从谈起。
+    ///
+    /// 只在**结论变化**时才回调：8s 一拍都回调，会让下游（写 defaults 供设置页显示）
+    /// 每 8s 惊动一次观察者，也让主线程白白挨一圈。
+    var onHealthChange: ((Bool?) -> Void)?
+
+    /// 最近一次探针结论（`nil` = 未知）。读方在主线程、写方在 watchdogQueue，
+    /// 故用既有的 lock 保护。
+    private var lastHealthy: Bool?
+
+    var health: Bool? {
+        lock.lock()
+        defer { lock.unlock() }
+        return lastHealthy
+    }
+
+    /// 引擎本次启动的时刻，用于「刚起来先别急着判死」（见 `inWarmUp`）。
+    private var startedAt: Date?
+
+    /// 预热窗口（秒）：`start()` 返回时 hev 只是被**派发**出去、还没 bind。此刻立刻探针
+    /// 必然拿到 ECONNREFUSED，会把「还没起来」判成「引擎无应答」—— 启动那一刻那条误导
+    /// 记录就是这么来的（真机上还只写一次、不刷新，用户看到就一直以为坏了）。
+    /// 窗口内不探针、也不计失败票。
+    private static let warmUpSeconds: TimeInterval = 2.0
 
     /// 单次探针的总预算（毫秒）：connect 阶段与握手应答阶段各自最多用这么多。
     private static let probeTimeoutMS: Int32 = 800
@@ -145,6 +174,7 @@ final class HevSocksProxy {
         let yaml = Self.configYAML(port: port, bindInterface: bindInterface,
                                    logLevel: logLevel)
         running = true
+        startedAt = Date()          // 预热窗口的起点（见 inWarmUp）
         group.enter()
 
         queue.async {
@@ -207,8 +237,12 @@ final class HevSocksProxy {
         // 见 watchdogQueue / maxConsecutiveFailures 两处注释。
         watchdogQueue.async { [weak self] in
             guard let self else { return }
+            // 刚启动的预热窗口内不探：此刻 hev 还没 bind，探针必然失败（见 inWarmUp）。
+            guard !self.inWarmUp() else { return }
             // 探针 = 真握手（见 isServing：connect 成功不代表引擎在干活）。
-            guard !self.isServing else {
+            let serving = self.isServing
+            self.publishHealth(serving)          // 结论变化时通知下游（设置页 / 屏上那行）
+            guard !serving else {
                 self.resetFailures()
                 return
             }
@@ -229,6 +263,62 @@ final class HevSocksProxy {
             NSLog("[HevSocks] 连续 %d 次探针失败，执行 stop+start 自愈", self.maxConsecutiveFailures)
             _ = self.start()
         }
+    }
+
+    /// 落定一次健康结论，**仅当结论变化时**回调（主队列投递）。
+    ///
+    /// 三种取值各有含义，别合并：`true` = 真握手通过；`false` = 探针没通过（含
+    /// 「端口在、引擎不干活」这个旧探针看不见的状态）；`nil` = 引擎已被停掉。
+    private func publishHealth(_ healthy: Bool?) {
+        lock.lock()
+        let changed = lastHealthy != healthy
+        lastHealthy = healthy
+        lock.unlock()
+        guard changed, let callback = onHealthChange else { return }
+        DispatchQueue.main.async { callback(healthy) }
+    }
+
+    /// 启动引擎（**异步**）。派发到 watchdogQueue —— 与 `stopAsync` 同一条**串行**队列，
+    /// 所以「关掉又立刻打开」不会乱序：主线程直接调 `start()` 的话，它会撞上还没停掉的
+    /// 旧实例、`guard !running` 直接返回（看起来启动了，其实什么都没做），紧接着停才生效
+    /// ⇒ 引擎死了而开关显示是开的。
+    func startAsync(completion: (() -> Void)? = nil) {
+        watchdogQueue.async { [weak self] in
+            guard let self else {
+                if let completion { DispatchQueue.main.async(execute: completion) }
+                return
+            }
+            _ = self.start()
+            if let completion { DispatchQueue.main.async(execute: completion) }
+        }
+    }
+
+    /// 停止引擎（**异步**）。`stop()` 内部要 `group.wait(timeout: 5s)`，主线程直接调会把
+    /// 界面卡住最多 5 秒，所以必须走这里。停干净后健康结论置 `nil`（引擎都没了，「健不健康」
+    /// 不再成立）；若 5s 内没停干净则记为 `false` —— 那正是「端口在、引擎不干活」，
+    /// 必须如实报出去，不能伪装成「已关闭」。
+    func stopAsync(completion: (() -> Void)? = nil) {
+        watchdogQueue.async { [weak self] in
+            guard let self else {
+                if let completion { DispatchQueue.main.async(execute: completion) }
+                return
+            }
+            let stopped = self.stop()
+            if !stopped {
+                NSLog("[HevSocks] ⚠️ 关闭开关时引擎 5s 内未退出，端口 %d 仍可能被占；"
+                      + "下一轮自检会再试", Int(self.port))
+            }
+            self.publishHealth(stopped ? nil : false)
+            if let completion { DispatchQueue.main.async(execute: completion) }
+        }
+    }
+
+    /// 是否仍在「刚启动」的预热窗口内（见 `warmUpSeconds`）。
+    private func inWarmUp() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let startedAt else { return false }   // 从没启动过：交给探针如实报「无应答」
+        return Date().timeIntervalSince(startedAt) < Self.warmUpSeconds
     }
 
     private func resetFailures() {

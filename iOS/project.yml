@@ -19,7 +19,18 @@ targets:
     # minos 14.8 构建，deployment target 必须 ≥ 14.8 才能零告警链接。
     deploymentTarget: "14.8"
     sources:
-      - App
+      # Settings.bundle 是**目录型资源**：它是系统「设置」→ 本 App 那一页的 schema
+      # （Root.plist，里面放着隧道开关 socks_allowed）。不显式声明成 resources 就不会
+      # 被拷进 .app，那一页根本不会出现。
+      # ⚠️ 本机没装 xcodegen，所以 `LegacyPadDisplay.xcodeproj/project.pbxproj` 是**手工**
+      # 同步的（那份 pbxproj 里还有你填的 bundle id / DEVELOPMENT_TEAM，跑 xcodegen
+      # 会把它们覆盖掉）。以后要么重新跑 xcodegen、要么两处一起改。
+      - path: App
+        excludes:
+          - "Settings.bundle"
+          - "Settings.bundle/**"
+      - path: App/Settings.bundle
+        buildPhase: resources
     dependencies:
       # hev-socks5-server —— 本项目唯一的 SOCKS5 引擎（协程版）。
       # 静态库（.a 打包成 xcframework），不需要 embed。

@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  系统「设置」→ 本 App 的那一页。
+
+  为什么把隧道开关放这里（而不是 App 自己界面上）：这台 iPad 平时整屏在放 Mac 的
+  画面（副屏），界面上加控件会被投射出去、占 Mac 的桌面。系统设置页是独立进程画
+  的，不占副屏一寸。
+
+  两条老坑，改本文件前必读：
+
+  1) Root.plist 里的 DefaultValue **不会**在安装时就写进 defaults —— 只有用户打开过
+     这个设置页之后才写。在那之前 App 读 socks_allowed 会拿到 false，等于「刚装好
+     第一次启动就把隧道静默关掉」。所以 App 侧必须自己 registerDefaults
+     （见 ReceiverViewController.registerDefaultsFromSettingsBundle），两处默认值要
+     一起改。
+  2) 本页只在**打开那一刻**读一次 defaults。下面「引擎自检」那两行是 App 上次写下的
+     快照，不是实时值；开关改动也要等 App 回到前台才生效（App 在后台时读不到）。
+     页脚已经写明这两件事，免得用户以为开关坏了或状态卡住了。
+-->
+<plist version="1.0">
+<dict>
+	<key>PreferenceSpecifiers</key>
+	<array>
+		<dict>
+			<key>Type</key>
+			<string>PSGroupSpecifier</string>
+			<key>Title</key>
+			<string>本机作为 Mac 的出口</string>
+			<key>FooterText</key>
+			<string>关掉后本机不再向 Mac 提供 SOCKS5 出口（9001 端口不再监听），Mac 那边的隧道会随之断开。Mac 侧那个开关管的是「我现在要不要用」，这里管的是「这台平板允不允许被借道」，两者含义不同。改动要等本 App 回到前台才生效。</string>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSToggleSwitchSpecifier</string>
+			<key>Title</key>
+			<string>允许 Mac 借道本机上网</string>
+			<key>Key</key>
+			<string>socks_allowed</string>
+			<key>DefaultValue</key>
+			<true/>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSGroupSpecifier</string>
+			<key>Title</key>
+			<string>引擎自检</string>
+			<key>FooterText</key>
+			<string>App 每 8 秒做一次真 SOCKS5 握手自检（只连端口不算数——端口在、引擎卡死时连接照样成功）。下面两行是上一次自检写下的记录，本页打开时读一次、不实时刷新。</string>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSTitleValueSpecifier</string>
+			<key>Title</key>
+			<string>引擎状态</string>
+			<key>Key</key>
+			<string>socks_status_text</string>
+			<key>DefaultValue</key>
+			<string>尚未自检</string>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSTitleValueSpecifier</string>
+			<key>Title</key>
+			<string>上次自检时刻</string>
+			<key>Key</key>
+			<string>socks_status_at</string>
+			<key>DefaultValue</key>
+			<string>—</string>
+		</dict>
+	</array>
+</dict>
+</plist>
