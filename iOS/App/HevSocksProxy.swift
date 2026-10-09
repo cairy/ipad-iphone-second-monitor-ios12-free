@@ -49,7 +49,7 @@ final class HevSocksProxy {
     private let watchdogQueue = DispatchQueue(label: "com.example.hev-watchdog", qos: .utility)
 
     /// 连续探针失败次数。真握手下一次失败就意味着「引擎这一个周期没回话」，
-    /// 但 hev 在高负载（workers:2 / limit-nofile:512）下偶尔慢一拍是正常的，
+    /// 但 hev 在高负载（workers:2 / limit-nofile:2048）下偶尔慢一拍是正常的，
     /// 单次超时误判就会 stop+start、掐断 Mac 侧所有正在转发的会话。只有连续
     /// 多次失败才真正自愈。
     private var consecutiveFailures = 0
@@ -347,7 +347,13 @@ final class HevSocksProxy {
           tcp-read-write-timeout: 300000
           log-file: stderr
           log-level: \(logLevel)
-          limit-nofile: 512
+          # nofile 是 server 端唯一的并发天花板（无 max-session-count）：每条被代理
+          # 的 TCP 会话耗 2 个 fd（客户端＋出站），512 ⇒ 并发上限约 253。Mac 侧
+          # hev-socks5-tunnel 的 max-session-count 是 1024，且其读写超时已放宽到
+          # 5 分钟（长连接并发上升）——本值 2048（上限约 1020）与之对齐。
+          # setrlimit 撞 iOS 硬上限时只是失败并留一条 WARN，实际停留在系统允许
+          # 的最大值，不会比旧值更差。
+          limit-nofile: 2048
         """
     }
 }
