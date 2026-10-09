@@ -68,6 +68,24 @@
 			<key>DefaultValue</key>
 			<string>—</string>
 		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSGroupSpecifier</string>
+			<key>Title</key>
+			<string>签名有效期</string>
+			<key>FooterText</key>
+			<string>本 App 用个人证书签名，7 天过期；过期后无法再次启动（前台常驻是例外，不可依赖）。这行是 App 启动时算的快照，重新签名安装后更新。Mac 端 BarKit 也经 USB 读到同一份信息。</string>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSTitleValueSpecifier</string>
+			<key>Title</key>
+			<string>签名状态</string>
+			<key>Key</key>
+			<string>sign_expiry_text</string>
+			<key>DefaultValue</key>
+			<string>尚未解析</string>
+		</dict>
 	</array>
 </dict>
 </plist>

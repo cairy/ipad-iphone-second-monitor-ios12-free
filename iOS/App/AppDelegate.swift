@@ -19,6 +19,10 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         window.backgroundColor = .black
         window.makeKeyAndVisible()
         self.window = window
+        // 签名到期：解析一次 → 写设置页 defaults + 起 9002 应答点（常量 payload）。
+        // 放这里而不是 ReceiverViewController：与视图生命周期解耦，开关翻转/重建
+        // 视图都不会重复起应答点。
+        SignatureAnnounce.start()
         return true
     }
 }
