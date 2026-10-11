@@ -72,6 +72,36 @@ final class HevSocksProxy {
         return lastHealthy
     }
 
+    /// 是否有人叫过引擎退出（`stop()` 置位，`main_from_str` 返回时消费）。
+    /// 用来区分「我们停的」与「它自己没的」——旧写法两者都只写 `rc=0` 一条，
+    /// 于是自愈时每轮一条正常退出记录，会把「引擎无故自己退出」这条真线索淹掉。
+    private var quitRequested = false
+
+    /// 故障原因。**只用于日志去重，不参与任何控制流**（见 `speakTrouble`）。
+    private enum Trouble: Hashable {
+        case probeFailed          // 探针连续失败，判定故障并自愈
+        case engineUnstoppable    // stop() 等到超时，旧引擎仍占着端口
+        case engineExitAbnormal   // main_from_str 返回 rc≠0
+        case engineExitSpurious   // 没人叫它退、它自己退了（恰好 rc=0）
+    }
+
+    /// 本次故障期里已经出过声的原因。**故障期由一次成功的探针结束**（见
+    /// `endFaultEpisode`）——「好了没有」看「真服务通了」，不看「绑上了」。
+    ///
+    /// 为什么要去重：本程序是长跑进程（数天不重启），故障期里探针会失败成千上万
+    /// 拍、自愈循环上百轮。日志若随重试次数增长，控制台会被刷满、真线索反被淹没
+    /// （本仓在 `ReceiverViewController` 的保活重试处已记过同一个坑）。
+    private var spokenTroubles: Set<Trouble> = []
+
+    /// 本次故障期累计失败的探针拍数（随故障期清零）。让「已恢复」那一条带上
+    /// 「这次故障持续了多久」——不花钱，因为那一行本来就要写。
+    private var faultTicks = 0
+
+    /// 自最近一次「判定故障」以来、**未达阈值**的零星失败拍数（设计允许的抖动，
+    /// 见 `maxConsecutiveFailures`）。抖动被静默后不该变成盲区，故把它作为字段挂在
+    /// 「进入故障」那一条上（`speakTrouble(.probeFailed, …)`）。
+    private var blipTicks = 0
+
     /// 引擎本次启动的时刻，用于「刚起来先别急着判死」（见 `inWarmUp`）。
     private var startedAt: Date?
 
@@ -165,8 +195,13 @@ final class HevSocksProxy {
         self.logLevel = logLevel
     }
 
+    /// 启动引擎（只做派发；真正的 hev 循环阻塞在 `queue` 上，见文件头第 2 点）。
+    ///
+    /// - parameter announce: 是否记一条「已启动」。**自愈重启传 `false`**：那是故障期
+    ///   内部的动作，进出两端已经有「进入故障／已恢复」各一条记着，这里再记一次就等于
+    ///   让日志随自愈轮数增长（本程序要连跑数天，见 `spokenTroubles`）。
     @discardableResult
-    func start() -> Bool {
+    func start(announce: Bool = true) -> Bool {
         lock.lock()
         defer { lock.unlock() }
         guard !running else { return true }
@@ -193,17 +228,26 @@ final class HevSocksProxy {
                 let bytes = UnsafeRawPointer(cstr).assumingMemoryBound(to: UInt8.self)
                 return hev_socks5_server_main_from_str(bytes, len)
             }
-            // 非 0 必打 ⚠️：这条退出路径是「引擎真的死了」的唯一证据，淹没在
-            // 一堆 rc=0 里就等于没有日志。
-            if rc == 0 {
-                NSLog("[HevSocks] main_from_str 返回 rc=0（正常退出）")
-            } else {
-                NSLog("[HevSocks] ⚠️ main_from_str 返回 rc=%d（非 0 = 配置、绑定或运行出错）", rc)
+            // 退出要分清「我们叫它退的」与「它自己没的」：两者旧写法都只留 rc=0 一条，
+            // 于是自愈时每轮一条正常退出记录，把「引擎无故自己退出」这条真线索淹掉。
+            // 每因一期内只报一次（见 speakTrouble）；应我们所请的正常退出不出声。
+            self.lock.lock()
+            let askedToQuit = self.quitRequested
+            self.quitRequested = false
+            self.lock.unlock()
+            if rc != 0 {
+                self.speakTrouble(.engineExitAbnormal,
+                    "[HevSocks] ⚠️ main_from_str 返回 rc=\(rc)（非 0 = 配置、绑定或运行出错）")
+            } else if !askedToQuit {
+                self.speakTrouble(.engineExitSpurious,
+                    "[HevSocks] ⚠️ 引擎自行退出（rc=0，但本对象没有请求过退出）")
             }
         }
 
-        NSLog("[HevSocks] 已启动 127.0.0.1:%d（bind-interface=%@, log=%@）",
-              Int(port), bindInterface.isEmpty ? "<不绑接口>" : bindInterface, logLevel)
+        if announce {
+            NSLog("[HevSocks] 已启动 127.0.0.1:%d（bind-interface=%@, log=%@）",
+                  Int(port), bindInterface.isEmpty ? "<不绑接口>" : bindInterface, logLevel)
+        }
         return true
     }
 
@@ -220,18 +264,29 @@ final class HevSocksProxy {
         lock.unlock()
         guard wasRunning else { return true }
 
+        lock.lock()
+        quitRequested = true       // 见 quitRequested：让退出回调认出「是我们叫的」
+        lock.unlock()
         hev_socks5_server_quit()
 
         // 必须等 main_from_str 真正返回。5s 是经验值：hev 的停止路径是协作式的，
         // 正常情况下 一轮调度内就会退出。
         if group.wait(timeout: .now() + 5) == .timedOut {
-            NSLog("[HevSocks] ⚠️ 引擎 5s 内未退出，端口 %d 可能仍被占用", Int(port))
+            // 每因一期内只报一次：停不掉往往持续存在，而这里是**所有**调用方
+            // （看门狗、设置页开关）的公共出口，故日志落在这里、别处不再重复。
+            speakTrouble(.engineUnstoppable,
+                "[HevSocks] ⚠️ 引擎 5s 内未退出，端口 \(Int(port)) 可能仍被占用")
             return false
         }
         return true
     }
 
     /// 看门狗自愈入口：探针失败连续 N 次才 stop+start。
+    ///
+    /// **日志只记状态翻转**（本程序要连跑数天）：单拍/两拍抖动是设计允许的（见
+    /// `maxConsecutiveFailures`），全程静默——把正常现象报成故障，比不报还坏。
+    /// 整个故障期只在「判定故障」与「真的恢复」两点各出一条，与故障持续多久、
+    /// 自愈重试了多少轮无关（见 `speakTrouble` / `endFaultEpisode`）。
     func ensureListening() {
         // 整个「探针 + 可能的重启」都派发到后台队列，主线程完全不阻塞。
         // 见 watchdogQueue / maxConsecutiveFailures 两处注释。
@@ -243,25 +298,35 @@ final class HevSocksProxy {
             let serving = self.isServing
             self.publishHealth(serving)          // 结论变化时通知下游（设置页 / 屏上那行）
             guard !serving else {
-                self.resetFailures()
+                self.endFaultEpisode()
                 return
             }
             self.lock.lock()
             self.consecutiveFailures += 1
             let n = self.consecutiveFailures
+            self.faultTicks += 1
+            self.blipTicks += 1
+            let blips = self.blipTicks
             self.lock.unlock()
-            NSLog("[HevSocks] 引擎探针失败（连续 %d/%d 次）", n, self.maxConsecutiveFailures)
-            // 只有连续多次失败才真重启，避免 hev 高负载下一两次慢应答误判。
+            // 没到阈值 ⇒ 静默。零星抖动的**次数**不丢：它挂在下次「进入故障」那一条上。
             guard n >= self.maxConsecutiveFailures else { return }
             self.resetFailures()
+            self.lock.lock()
+            let stray = max(0, blips - n)     // 这 n 拍是本轮连续失败，其余是此前的零星抖动
+            self.blipTicks = 0
+            self.lock.unlock()
+            // ①「进入故障」：整个故障期唯一一条，也是下次出事时的取证起点。
+            self.speakTrouble(.probeFailed,
+                "[HevSocks] ⚠️ 探针连续 \(n) 次失败 → 执行 stop+start 自愈"
+                + (stray > 0 ? "（自上次故障以来另有 \(stray) 拍零星失败）" : ""))
             // ★ 停干净才起：旧实例还占着 9001 时硬 start 只会 bind 失败，
             //   留下「端口在、不干活」的死占（见 stop 的说明）。
             guard self.stop() else {
-                NSLog("[HevSocks] 旧引擎未停干净，本轮放弃重启，等下一轮探针重试")
+                // 停不掉这件事 stop() 里已经出过声（那里带端口号，且是所有调用方的
+                // 公共出口），此处不再重复。下一轮探针会再来（quit() 可重复调用）。
                 return
             }
-            NSLog("[HevSocks] 连续 %d 次探针失败，执行 stop+start 自愈", self.maxConsecutiveFailures)
-            _ = self.start()
+            _ = self.start(announce: false)   // 自愈重启不出声（见 start(announce:)）
         }
     }
 
@@ -303,11 +368,9 @@ final class HevSocksProxy {
                 if let completion { DispatchQueue.main.async(execute: completion) }
                 return
             }
+            // 停不掉这件事由 `stop()` 统一出声（那里带端口号，且覆盖所有调用方）——
+            // 同一事实只留一处，这里不再重复刷一条。
             let stopped = self.stop()
-            if !stopped {
-                NSLog("[HevSocks] ⚠️ 关闭开关时引擎 5s 内未退出，端口 %d 仍可能被占；"
-                      + "下一轮自检会再试", Int(self.port))
-            }
             self.publishHealth(stopped ? nil : false)
             if let completion { DispatchQueue.main.async(execute: completion) }
         }
@@ -325,6 +388,38 @@ final class HevSocksProxy {
         lock.lock()
         consecutiveFailures = 0
         lock.unlock()
+    }
+
+    /// 报一条故障日志：**同一个故障期内、同一个原因只报一次**（见 `spokenTroubles`）。
+    ///
+    /// `message` 是 `@autoclosure`：被抑制时连字符串都不拼——探针是一拍拍地跑的，
+    /// 这条路径上不能有稳态开销。返回值只表示「这次真报了吗」，不参与控制流。
+    @discardableResult
+    private func speakTrouble(_ kind: Trouble, _ message: @autoclosure () -> String) -> Bool {
+        lock.lock()
+        let first = spokenTroubles.insert(kind).inserted
+        lock.unlock()
+        guard first else { return false }
+        NSLog("%@", message())          // 走 %@：消息里的 % 不会被当成格式符
+        return true
+    }
+
+    /// 故障期结束（探针**真的服务通了**）。这是唯一清账的地方 ⇒ 下一轮故障会重新出声；
+    /// 顺带把累计失败拍数补进一条「已恢复」记录——那一行本来就要写，加个字段就把
+    /// 「这次故障持续了多久」从 N 行压成了 1 行。
+    ///
+    /// 用「真握手通了」而不是「绑上了」判恢复：端口在、引擎不干活时探针通不过，
+    /// 此时若清了账，两天后真出事时日志会重新刷屏（本仓吃过这个假正常态的亏）。
+    private func endFaultEpisode() {
+        lock.lock()
+        let wasSpoken = !spokenTroubles.isEmpty
+        let ticks = faultTicks
+        spokenTroubles.removeAll()
+        faultTicks = 0
+        consecutiveFailures = 0
+        lock.unlock()
+        guard wasSpoken else { return }      // 一直健康：静默（稳态零日志）
+        NSLog("[HevSocks] ✅ 引擎探针已恢复（本次故障累计 %d 拍失败）", ticks)
     }
 
     // MARK: - 配置

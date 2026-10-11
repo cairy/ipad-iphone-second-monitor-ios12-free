@@ -252,12 +252,25 @@ final class ReceiverViewController: UIViewController, VideoReceiverDelegate {
         appActive = true
         updateSessionState()
         healSocks()
+        SignatureAnnounce.rearm()
     }
 
-    // 锁屏 -> 解锁触发的是 didBecomeActive，而不是 willEnterForeground。
-    // 不在这里也自愈一次，解锁后监听会一直是死的。
+    // 锁屏 -> 解锁**可能**只触发 didBecomeActive、不来 willEnterForeground。这一条是
+    // 本仓的经验性断言，**未在真机上逐条验证过**（iOS 行为随版本/配置而变，公开资料
+    // 互相矛盾）。在这里补一次 SOCKS 自愈没有代价——healSocks 幂等，最坏只是一次多余探针。
+    //
+    // 不要在这里顺手调 updateSessionState()：9000 的重建是「无条件拆掉再建」，而
+    // didBecomeActive 在拉下控制中心/通知中心时也会来（那时进程**没**进过后台）⇒ 会把
+    // 正在投的视频连接拆掉重建，每拉一次闪一次。9000 的唤醒路径由 appWillEnterForeground
+    // 覆盖（见 updateSessionState）。若将来真机日志证明「解锁确实不来 willEnterForeground」，
+    // 再单独给 9000 设计一条**带判据**的恢复路径，不要退回无条件重建。
+    //
+    // announce（9002）两个入口都挂：唤醒边界会把进程里的监听一起收走，而它没有
+    // 别的自愈路径（9000 会重建、9001 有 8s 看门狗）。rearm 幂等，连来两次只是多绑
+    // 一次（日志多一行「已监听（唤醒重建）」）。见 SignatureAnnounce.rearm。
     @objc private func appDidBecomeActive() {
         healSocks()
+        SignatureAnnounce.rearm()
     }
 
     // iPad 进后台（锁 iPad / 回主屏）：进程被音频保活撑着不挂起，若视频

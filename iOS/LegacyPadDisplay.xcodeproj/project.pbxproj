@@ -15,6 +15,7 @@
 		979B14DB6CEC6E9908FE0506 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 067A36546AA0E8BB98C66B3F /* Assets.xcassets */; };
 		C0B12A851481B8A306F963F0 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B315F6329884FBDABCF68CDB /* AppDelegate.swift */; };
 		E5A2C7D8143B96F0CD72A54B /* Settings.bundle in Resources */ = {isa = PBXBuildFile; fileRef = B7D41A93C0E64F82AD35E719 /* Settings.bundle */; };
+		E7F8091A2B3C4D5E6F708192 /* SignatureAnnounce.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4E5F60718293A4B5C6D7E8F /* SignatureAnnounce.swift */; };
 		F163F22AD06ECA70EC848C29 /* ReceiverViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD4E67EEBAADB7ABD549A827 /* ReceiverViewController.swift */; };
 /* End PBXBuildFile section */
 
@@ -24,10 +25,11 @@
 		99119294FD1D1FD46EFA2F45 /* AudioKeepAlive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioKeepAlive.swift; sourceTree = "<group>"; };
 		A28BE9AC4C2D52E4949FD21E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		B315F6329884FBDABCF68CDB /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
-		B7D41A93C0E64F82AD35E719 /* Settings.bundle */ = {isa = PBXFileReference; lastKnownFileType = wrapper.plug-in; path = Settings.bundle; sourceTree = "<group>"; };
+		B7D41A93C0E64F82AD35E719 /* Settings.bundle */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.plug-in"; path = Settings.bundle; sourceTree = "<group>"; };
 		BA13DBC0480DFA4458908348 /* HevSocksProxy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HevSocksProxy.swift; sourceTree = "<group>"; };
 		BD4E67EEBAADB7ABD549A827 /* ReceiverViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiverViewController.swift; sourceTree = "<group>"; };
 		D31D10293304F90494CF1032 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
+		D4E5F60718293A4B5C6D7E8F /* SignatureAnnounce.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignatureAnnounce.swift; sourceTree = "<group>"; };
 		F6B16C3723092E738647E61B /* LegacyPadDisplay.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LegacyPadDisplay.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F8BD162F6949C37A494E0A4B /* VideoReceiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoReceiver.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -64,6 +66,7 @@
 				D31D10293304F90494CF1032 /* LaunchScreen.storyboard */,
 				BD4E67EEBAADB7ABD549A827 /* ReceiverViewController.swift */,
 				B7D41A93C0E64F82AD35E719 /* Settings.bundle */,
+				D4E5F60718293A4B5C6D7E8F /* SignatureAnnounce.swift */,
 				F8BD162F6949C37A494E0A4B /* VideoReceiver.swift */,
 			);
 			path = App;
@@ -162,6 +165,7 @@
 				7F9F02F2F0F8B7AC4A997A5F /* AudioKeepAlive.swift in Sources */,
 				0D17B84B7B74BDF538310607 /* HevSocksProxy.swift in Sources */,
 				F163F22AD06ECA70EC848C29 /* ReceiverViewController.swift in Sources */,
+				E7F8091A2B3C4D5E6F708192 /* SignatureAnnounce.swift in Sources */,
 				19463B5CEDC2A732CD5545EE /* VideoReceiver.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
